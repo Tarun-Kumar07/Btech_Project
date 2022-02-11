@@ -22,22 +22,27 @@ class SNN(pl.LightningModule):
         self.fmax = fmax 
         self.learning_rate = learning_rate
 
+        self.conv1 = nn.Conv2d(1,16,5,2)
+        self.conv2 = nn.Conv2d(16,64,5)
+        self.conv3 = nn.Conv2d(64,128,5)
+        self.maxPool = nn.MaxPool2d(2)
+        self.linear = nn.Linear(128*3*3,self.num_classes)
+
         self.model = SequentialState(
-                                      PoissonEncoder(self.seq_length,self.fmax), 
-                                      Lift(nn.Conv2d(1,8,5,2)), #48
-                                      Lift(nn.MaxPool2d(2)), #24
-                                      LIF(self.lif_params),
-                                      Lift(nn.Conv2d(8,16,5)), #21
-                                      Lift(nn.MaxPool2d(2)), #11
-                                      LIF(self.lif_params),
-                                      Lift(nn.Conv2d(16,32,5)), #6
-                                      Lift(nn.MaxPool2d(2)), #3
-                                      LIF(self.lif_params),
-                                      Lift(nn.Flatten()), #32*3*3 
-                                      Lift(nn.Linear(32*3*3,self.num_classes)),
-                                      LIF(self.lif_params),
-                                      )
-   
+                                  PoissonEncoder(self.seq_length,self.fmax), 
+                                  Lift(self.conv1), #48
+                                  Lift(self.maxPool), #24
+                                  LIF(self.lif_params),
+                                  Lift(self.conv2), #21
+                                  Lift(self.maxPool), #11
+                                  LIF(self.lif_params),
+                                  Lift(self.conv3), #6
+                                  Lift(self.maxPool), #3
+                                  LIF(self.lif_params),
+                                  Lift(nn.Flatten()), #32*3*3 
+                                  Lift(self.linear),
+                                  LIF(self.lif_params),
+                                  )
 
     def forward(self,x):
         return self.model(x) 
@@ -84,7 +89,6 @@ class SNN(pl.LightningModule):
 
     def training_epoch_end(self,step_outputs):
         loss, acc = self._epoch_end(step_outputs)
-        print(loss , acc)
         self.log("train_loss", loss, prog_bar=True)
         self.log("train_acc", acc, prog_bar=True)
 
@@ -182,7 +186,7 @@ def main():
     params = LIFParameters(v_th = 0.001)
     snn = SNN(seq_length=32,num_classes = 58,lif_params=params,fmax=1000)
 
-    trainer = pl.Trainer(gpus=gpus,max_epochs=100)
+    trainer = pl.Trainer(gpus=gpus,max_epochs=10,fast_dev_run=False)
 
     trainer.fit(snn,dm)
 
