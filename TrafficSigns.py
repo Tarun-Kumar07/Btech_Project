@@ -64,7 +64,7 @@ class SNN(pl.LightningModule):
         acc = accuracy(logits,y)
 
         pbar = {"acc":acc}
-        return {"loss":loss,"progress_bar":pbar}
+        return {"loss":loss,"acc":acc,"progress_bar":pbar}
 
     def training_step(self,batch,batch_idx):
         return self._step(batch) 
@@ -77,14 +77,14 @@ class SNN(pl.LightningModule):
 
 
     def _epoch_end(self,step_outputs):
-        print(step_outputs[0])
         avg_loss = torch.Tensor([x["loss"] for x in step_outputs]).mean()
-        avg_acc = torch.Tensor([x["progress_bar"]["acc"] for x in step_outputs]).mean()
+        avg_acc = torch.Tensor([x["acc"] for x in step_outputs]).mean()
 
         return avg_loss, avg_acc
 
-    def train_epoch_end(self,step_outputs):
+    def training_epoch_end(self,step_outputs):
         loss, acc = self._epoch_end(step_outputs)
+        print(loss , acc)
         self.log("train_loss", loss, prog_bar=True)
         self.log("train_acc", acc, prog_bar=True)
 
