@@ -2,15 +2,19 @@ import os
 import shutil
 import torch
 import torch.nn as nn
+
 import pytorch_lightning as pl
 
 from torchmetrics.functional import accuracy
-from torchvision import transforms
-from torch.utils.data import random_split, DataLoader
-from torchvision.datasets import ImageFolder 
+from torchmetrics import ConfusionMatrix 
 from norse.torch.module import Lift
 from norse.torch import SequentialState, PoissonEncoder, LIF, LIFParameters
 
+from data_modules import TrafficSignsDataModule
+
+import pandas as pd 
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 class SNN(pl.LightningModule):
 
@@ -21,6 +25,10 @@ class SNN(pl.LightningModule):
         self.lif_params = lif_params
         self.fmax = fmax 
         self.learning_rate = learning_rate
+        self.val_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
+        self.test_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
+        # self.val_accuracy = Accuracy(num_classes=num_classes)
+        # self.test_accuracy = Accuracy(num_classes=num_classes)
 
         self.conv1 = nn.Conv2d(1,16,5,2)
         self.conv2 = nn.Conv2d(16,64,5)
@@ -45,18 +53,7 @@ class SNN(pl.LightningModule):
                                   )
 
     def forward(self,x):
-        return self.model(x) 
-
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
-        return optimizer
-
-    def _step(self,batch):
-        # Return the loss
-        x,y = batch
-        # x shape => (batch_size,1,100,100)
-        out,state = self(x)
+        out,state = self.model(x) 
 
         #Compute spiking rate by summing across the time dimension (first dimension)
         spikes = torch.sum(out,0)
@@ -64,21 +61,55 @@ class SNN(pl.LightningModule):
         #Convert to logits and apply cross entropy loss
         logits = nn.functional.softmax(spikes,dim=1)
 
-        #Compute Negative log likelihood loss and accuracy
-        loss = nn.functional.nll_loss(logits,target = y)
-        acc = accuracy(logits,y)
+        return logits
 
-        pbar = {"acc":acc}
-        return {"loss":loss,"acc":acc,"progress_bar":pbar}
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        return optimizer
+
+    #def _step(self,batch):
+    #    # Return the loss
+    #    x,y = batch
+    #    # x shape => (batch_size,1,100,100)
+
+    #    #Compute Negative log likelihood loss and accuracy
+    #    logits = self(x)
+    #    loss = nn.functional.nll_loss(logits,target = y)
+
+    #    return loss 
 
     def training_step(self,batch,batch_idx):
-        return self._step(batch) 
+        # Return the loss
+        x,y = batch
+        # x shape => (batch_size,1,100,100)
+
+        #Compute Negative log likelihood loss and accuracy
+        logits = self(x)
+        loss = nn.functional.nll_loss(logits,target = y)
+        acc = accuracy(logits,y)
+        return {"loss":loss,"acc":acc} 
 
     def validation_step(self,batch,batch_idx):
-        return self._step(batch,) 
+        x,y = batch
+        logits = self(x)
+
+        loss = nn.functional.nll_loss(logits,target = y)
+
+        self.val_confusion_matix(logits,y)
+        acc = accuracy(logits,y)
+        return {"loss":loss,"acc":acc} 
+
       
     def test_step(self,batch,batch_idx):
-        return self._step(batch)
+        x,y = batch
+        logits = self(x)
+
+        loss = nn.functional.nll_loss(logits,target = y)
+
+        self.test_confusion_matix(logits,y)
+        acc = accuracy(logits,y)
+        return {"loss":loss,"acc":acc} 
 
 
     def _epoch_end(self,step_outputs):
@@ -86,6 +117,7 @@ class SNN(pl.LightningModule):
         avg_acc = torch.Tensor([x["acc"] for x in step_outputs]).mean()
 
         return avg_loss, avg_acc
+
 
     def training_epoch_end(self,step_outputs):
         loss, acc = self._epoch_end(step_outputs)
@@ -97,100 +129,40 @@ class SNN(pl.LightningModule):
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_acc", acc, prog_bar=True)
 
+        cm = self.test_confusion_matix.compute()
+        df_cm = pd.DataFrame(cm.numpy(), index = range(self.num_classes), columns=range(self.num_classes))
+        plt.figure(figsize = (10,7))
+        fig_ = sns.heatmap(df_cm, annot=True, cmap='Spectral').get_figure()
+
+        self.logger.experiment.add_figure("Confusion matrix", fig_, self.current_epoch)
+        plt.close(fig_)
+
     def test_epoch_end(self,step_outputs):
         loss, acc = self._epoch_end(step_outputs)
         self.log("test_loss", loss, prog_bar=True)
         self.log("test_acc", acc, prog_bar=True)
 
-class TrafficSignsDataModule(pl.LightningDataModule):
-
-  def __init__(self,data_dir,rearrange=False,num_worker=1,intensity=10,val_ratio=0.1,batch_size=32):
-
-    super(TrafficSignsDataModule,self).__init__()
-    # self.dims = (1,100,100)
-    self.val_ratio = val_ratio
-    self.batch_size = batch_size
-    self.data_dir = data_dir
-    self.rearrange = rearrange
-    self.num_worker = num_worker
-    self.transform = transforms.Compose([
-      transforms.Resize((100,100)),
-      transforms.Grayscale(),
-      transforms.ToTensor(),
-      transforms.Lambda(lambda x: x * intensity),                                    
-    ])
-  
-  
-  def prepare_data(self):
-    # Download the dataset at self.data_dir
-    # Rearrange function
-    def rearrange_dataset(src_folder,dest_folder,annotation_file):
-      with open(annotation_file) as f:
-        for line in f:
-          splitted = line.split(";")
-          image_name = splitted[0]
-          label = splitted[-2]
-
-          label_folder = os.path.join(dest_folder,label)
-          os.makedirs(label_folder,exist_ok=True)
-
-          src_path = os.path.join(src_folder,image_name)
-
-          shutil.copy2(src_path,label_folder)
-
-    
-    train_src = os.path.join(self.data_dir,"tsrd-train")
-    train_dest = os.path.join(self.data_dir,"Train")
-    train_annotation = os.path.join("TSRD-Train Annotation/TsignRecgTrain4170Annotation.txt")
-    test_src = os.path.join("TSRD-Test")    
-    test_dest = os.path.join(self.data_dir,"Test")
-    test_annotation = os.path.join("TSRD-Test Annotation/TsignRecgTest1994Annotation.txt")
-
-    if self.rearrange:
-      rearrange_dataset(train_src,train_dest,train_annotation)
-      rearrange_dataset(test_src,test_dest,test_annotation)
-
-    self.train_dir = train_dest
-    self.test_dir = test_dest
-    self.num_classes = len(os.listdir(train_dest))
-
-  def setup(self,stage=None):
-
-    if stage == "fit" or stage is None:
-      dataset = ImageFolder(self.train_dir,transform = self.transform)
-
-      size = len(dataset)
-      train_size = int((1-self.val_ratio)*size)
-      val_size = size - train_size
-
-      self.train_ds , self.val_ds = random_split(dataset,[train_size,val_size])
-    
-    if stage == "test" or stage is None:
-      self.test_ds = ImageFolder(self.test_dir,transform = self.transform)
-
-
-  def train_dataloader(self):
-    return DataLoader(self.train_ds,batch_size = self.batch_size, num_workers= self.num_worker)
-
-  def val_dataloader(self):
-    return DataLoader(self.val_ds,batch_size = self.batch_size,num_workers= self.num_worker)
-
-  def test_dataloader(self):
-        return DataLoader(self.test_ds,batch_size = self.batch_size,num_workers= self.num_worker)
 
 def main():
     gpus = torch.cuda.device_count()
     cpus = os.cpu_count()
     dm = TrafficSignsDataModule("../TrafficSigns",rearrange=False,num_worker=cpus)
 
-    params = LIFParameters(v_th = 0.001)
+    params = LIFParameters()
     snn = SNN(seq_length=32,num_classes = 58,lif_params=params,fmax=1000)
 
     trainer = pl.Trainer(gpus=gpus,max_epochs=10,fast_dev_run=False)
 
-    trainer.fit(snn,dm)
+    # rand_input = torch.rand((32,1,100,100))
+    # y,_ = snn(rand_input)
+    # lr_finder = trainer.tuner.lr_find(snn,dm,min_lr=1e-2)
+    # print(lr_finder.results)
+
+    # trainer.fit(snn,dm)
 
     trainer.test(snn,dm)
+
+    
 
 if __name__ == "__main__":
     main()
