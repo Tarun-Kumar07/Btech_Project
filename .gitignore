@@ -1,6 +1,7 @@
+*.pyc
 venv/*
 lightning_logs/*
 TrafficSignsLogs/*
 cache/*
 data/*
-*.pyc
+dvs128_logs/*
