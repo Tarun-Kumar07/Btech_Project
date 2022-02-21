@@ -4,13 +4,14 @@ import torch
 import torch.nn as nn
 
 import pytorch_lightning as pl
+import numpy as np
 
 from torchmetrics.functional import accuracy
 from torchmetrics import ConfusionMatrix 
-from norse.torch.module import Lift
+from norse.torch.module import Lift, LConv2d
 from norse.torch import SequentialState, PoissonEncoder, LIF, LIFParameters
 
-from data_modules import TrafficSignsDataModule
+from data_modules import DVSGestureDataModule
 
 import pandas as pd 
 import seaborn as sns
@@ -30,30 +31,59 @@ class SNN(pl.LightningModule):
         # self.val_accuracy = Accuracy(num_classes=num_classes)
         # self.test_accuracy = Accuracy(num_classes=num_classes)
 
-        self.conv1 = nn.Conv2d(1,16,5,2)
-        self.conv2 = nn.Conv2d(16,64,5)
-        self.conv3 = nn.Conv2d(64,128,5)
-        self.maxPool = nn.MaxPool2d(2)
-        self.linear = nn.Linear(128*3*3,self.num_classes)
+        self.conv1 = LConv2d(1,4,5,2)
+        self.conv2 = LConv2d(4,8,5,2)
+        self.conv3 = LConv2d(8,8,3,2)
+        self.conv4 = LConv2d(8,16,3,2)
+        self.dropout = nn.Dropout2d()
+        self.linear = nn.Linear(576,self.num_classes)
 
         self.model = SequentialState(
-                                  PoissonEncoder(self.seq_length,self.fmax), 
-                                  Lift(self.conv1), #48
-                                  Lift(self.maxPool), #24
+                                  # PoissonEncoder(self.seq_length,self.fmax), 
+                                  self.conv1, #48
                                   LIF(self.lif_params),
-                                  Lift(self.conv2), #21
-                                  Lift(self.maxPool), #11
+                                  self.conv2, #21
                                   LIF(self.lif_params),
-                                  Lift(self.conv3), #6
-                                  Lift(self.maxPool), #3
+                                  self.conv3, #6
                                   LIF(self.lif_params),
+                                  self.conv4, #6
+                                  LIF(self.lif_params),
+                                  self.dropout,
                                   Lift(nn.Flatten()), #32*3*3 
                                   Lift(self.linear),
                                   LIF(self.lif_params),
                                   )
 
     def forward(self,x):
+        
+        x = x[:,:,None,:,:]
+        x = np.swapaxes(x,1,0) # Making time axis as outer axis
+        x = x.float() #weights of convolution layers are in  floats
+
+        print(x.shape)
         out,state = self.model(x) 
+
+#         print("Applying conv1")
+#         x = self.conv1(x)
+#         print(x.shape)
+#         print("Applying conv2")
+#         x = self.conv2(x)
+#         print(x.shape)
+#         print("Applying conv3")
+#         x = self.conv3(x)
+#         print(x.shape)
+#         print("Applying conv4")
+#         x = self.conv4(x)
+#         print(x.shape)
+#         print("Applying Dropout")
+#         x = self.dropout(x)
+#         print(x.shape)
+#         print("After flatten")
+#         x = Lift(nn.Flatten())(x)
+#         print(x.shape)
+#         print("After Linear")
+#         x = Lift(self.linear)(x)
+#         print(x.shape)
 
         #Compute spiking rate by summing across the time dimension (first dimension)
         spikes = torch.sum(out,0)
@@ -146,21 +176,28 @@ class SNN(pl.LightningModule):
 def main():
     gpus = torch.cuda.device_count()
     cpus = os.cpu_count()
-    dm = TrafficSignsDataModule("../TrafficSigns",rearrange=False,num_worker=cpus)
+    # dm = TrafficSignsDataModule("../TrafficSigns",rearrange=False,num_worker=cpus)
+    dm = DVSGestureDataModule()
 
     params = LIFParameters()
-    snn = SNN(seq_length=32,num_classes = 58,lif_params=params,fmax=1000)
+    snn = SNN(seq_length=32,num_classes = 11,lif_params=params,fmax=1000)
 
-    trainer = pl.Trainer(gpus=gpus,max_epochs=10,fast_dev_run=False)
+    trainer = pl.Trainer(gpus=gpus,max_epochs=10,fast_dev_run=True)
 
     # rand_input = torch.rand((32,1,100,100))
     # y,_ = snn(rand_input)
     # lr_finder = trainer.tuner.lr_find(snn,dm,min_lr=1e-2)
     # print(lr_finder.results)
 
-    # trainer.fit(snn,dm)
+    trainer.fit(snn,dm)
 
     trainer.test(snn,dm)
+    # dm = DVSGestureDataModule()
+    # dm.setup()
+    # train = dm.train_dataloader()
+    # for x,y in train:
+    #     z = snn(x)
+    #     break
 
     
 

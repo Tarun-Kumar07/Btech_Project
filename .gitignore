@@ -3,3 +3,4 @@ lightning_logs/*
 TrafficSignsLogs/*
 cache/*
 data/*
+*.pyc
