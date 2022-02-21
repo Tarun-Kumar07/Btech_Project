@@ -31,12 +31,12 @@ class SNN(pl.LightningModule):
         # self.val_accuracy = Accuracy(num_classes=num_classes)
         # self.test_accuracy = Accuracy(num_classes=num_classes)
 
-        self.conv1 = LConv2d(1,4,5,2)
-        self.conv2 = LConv2d(4,8,5,2)
-        self.conv3 = LConv2d(8,8,3,2)
-        self.conv4 = LConv2d(8,16,3,2)
+        self.conv1 = LConv2d(1,4,5,2,2)
+        self.conv2 = LConv2d(4,8,5,2,2)
+        self.conv3 = LConv2d(8,8,3,2,1)
+        self.conv4 = LConv2d(8,16,3,2,1)
         self.dropout = nn.Dropout2d()
-        self.linear = nn.Linear(576,self.num_classes)
+        self.linear = nn.Linear(1024,self.num_classes)
 
         self.model = SequentialState(
                                   # PoissonEncoder(self.seq_length,self.fmax), 
@@ -60,7 +60,7 @@ class SNN(pl.LightningModule):
         x = np.swapaxes(x,1,0) # Making time axis as outer axis
         x = x.float() #weights of convolution layers are in  floats
 
-        print(x.shape)
+        # print(x.shape)
         out,state = self.model(x) 
 
 #         print("Applying conv1")
@@ -95,8 +95,10 @@ class SNN(pl.LightningModule):
 
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
-        return optimizer
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=5e-3, weight_decay=1e-5)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer,step_size=2,gamma=0.7)
+
+        return {"optimizer":optimizer,"lr_scheduler":scheduler}
 
     #def _step(self,batch):
     #    # Return the loss
@@ -160,7 +162,7 @@ class SNN(pl.LightningModule):
         self.log("val_acc", acc, prog_bar=True)
 
         cm = self.test_confusion_matix.compute()
-        df_cm = pd.DataFrame(cm.numpy(), index = range(self.num_classes), columns=range(self.num_classes))
+        df_cm = pd.DataFrame(cm.cpu().numpy(), index = range(self.num_classes), columns=range(self.num_classes))
         plt.figure(figsize = (10,7))
         fig_ = sns.heatmap(df_cm, annot=True, cmap='Spectral').get_figure()
 
@@ -182,7 +184,7 @@ def main():
     params = LIFParameters()
     snn = SNN(seq_length=32,num_classes = 11,lif_params=params,fmax=1000)
 
-    trainer = pl.Trainer(gpus=gpus,max_epochs=10,fast_dev_run=True)
+    trainer = pl.Trainer(gpus=gpus,max_epochs=10,fast_dev_run=True,gradient_clip_val=5)
 
     # rand_input = torch.rand((32,1,100,100))
     # y,_ = snn(rand_input)
