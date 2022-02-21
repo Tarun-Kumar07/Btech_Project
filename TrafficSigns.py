@@ -181,10 +181,10 @@ def main():
     # dm = TrafficSignsDataModule("../TrafficSigns",rearrange=False,num_worker=cpus)
     dm = DVSGestureDataModule()
 
-    params = LIFParameters()
+    params = LIFParameters(alpha=3,v_th=0.3,v_leak=0.7)
     snn = SNN(seq_length=32,num_classes = 11,lif_params=params,fmax=1000)
 
-    trainer = pl.Trainer(gpus=gpus,max_epochs=10,fast_dev_run=True,gradient_clip_val=5)
+    trainer = pl.Trainer(gpus=gpus,max_epochs=20,fast_dev_run=True,gradient_clip_val=5)
 
     # rand_input = torch.rand((32,1,100,100))
     # y,_ = snn(rand_input)
