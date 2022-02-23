@@ -17,7 +17,7 @@ class DVSGestureDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_worker = num_workers
         self.val_ratio = val_ratio
-
+        self.persistent = True
         sensor_size = DVSGesture.sensor_size
         self.transforms = Compose([
             ToVoxelGrid(sensor_size=sensor_size,n_time_bins=150)
@@ -37,13 +37,13 @@ class DVSGestureDataModule(pl.LightningDataModule):
           self.test_ds = DVSGesture(save_to = self.data_dir, train=False,transform=self.transforms) 
 
     def train_dataloader(self):
-        return DataLoader(self.train_ds,batch_size = self.batch_size, num_workers= self.num_worker)
+        return DataLoader(self.train_ds,batch_size = self.batch_size, num_workers= self.num_worker, persistent_workers=self.persistent)
 
     def val_dataloader(self):
-        return DataLoader(self.val_ds,batch_size = self.batch_size,num_workers= self.num_worker)
+        return DataLoader(self.val_ds,batch_size = self.batch_size,num_workers= self.num_worker, persistent_workers=self.persistent)
 
     def test_dataloader(self):
-        return DataLoader(self.test_ds,batch_size = self.batch_size,num_workers= self.num_worker)
+        return DataLoader(self.test_ds,batch_size = self.batch_size,num_workers= self.num_worker, persistent_workers=self.persistent)
 
 
 # class TrafficSignsDataModule(pl.LightningDataModule):
