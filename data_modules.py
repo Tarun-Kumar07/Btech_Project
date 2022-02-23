@@ -11,7 +11,7 @@ from torchvision.datasets import ImageFolder
 
 class DVSGestureDataModule(pl.LightningDataModule):
 
-    def __init__(self,data_dir="../dvs128",batch_size=32,num_workers=8,val_ratio=0.1):
+    def __init__(self,data_dir="../dvs128",batch_size=16,num_workers=4,val_ratio=0.1):
         super().__init__()
         self.data_dir = data_dir
         self.batch_size = batch_size
