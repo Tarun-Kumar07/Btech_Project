@@ -122,7 +122,7 @@ class SNN(pl.LightningModule):
 
         #Compute Negative log likelihood loss and accuracy
         logits = self(x)
-        y_one_hot = nn.functional.one_hot(y,num_classes=11)
+        y_one_hot = nn.functional.one_hot(y,num_classes=11).float()
         loss = self.loss(logits,y_one_hot)
         acc = accuracy(logits,y)
         return {"loss":loss,"acc":acc} 
@@ -130,10 +130,11 @@ class SNN(pl.LightningModule):
     def validation_step(self,batch,batch_idx):
         x,y = batch
         logits = self(x)
-
-        loss = self.loss(logits,y)
-
         self.val_confusion_matix(logits,y)
+
+        y_one_hot = nn.functional.one_hot(y,num_classes=11).float()
+        loss = self.loss(logits,y_one_hot)
+
         acc = accuracy(logits,y)
         return {"loss":loss,"acc":acc} 
 
@@ -141,10 +142,11 @@ class SNN(pl.LightningModule):
     def test_step(self,batch,batch_idx):
         x,y = batch
         logits = self(x)
-
-        loss = self.loss(logits,y)
-
         self.test_confusion_matix(logits,y)
+
+        y_one_hot = nn.functional.one_hot(y,num_classes=11).float()
+        loss = self.loss(logits,y_one_hot)
+
         acc = accuracy(logits,y)
         return {"loss":loss,"acc":acc} 
 
