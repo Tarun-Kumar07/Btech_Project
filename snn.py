@@ -30,14 +30,14 @@ class SNN(pl.LightningModule):
         self.test_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
         # self.val_accuracy = Accuracy(num_classes=num_classes)
         # self.test_accuracy = Accuracy(num_classes=num_classes)
-
+        self.loss = nn.CrossEntropyLoss()
         self.conv1 = LConv2d(1,4,5,2,2)
         self.conv2 = LConv2d(4,8,5,2,2)
         self.conv3 = LConv2d(8,8,3,2,1)
         self.conv4 = LConv2d(8,16,3,2,1)
         self.dropout = nn.Dropout2d()
         self.linear = nn.Linear(1024,self.num_classes)
-
+        
         self.model = SequentialState(
                                   # PoissonEncoder(self.seq_length,self.fmax), 
                                   self.conv1, #48
@@ -56,12 +56,16 @@ class SNN(pl.LightningModule):
 
     def forward(self,x):
         
-        x = x[:,:,None,:,:]
-        x = np.swapaxes(x,1,0) # Making time axis as outer axis
+        # x = x[:,:,None,:,:]
+        # x = np.swapaxes(x,1,0) # Making time axis as outer axis
+
+        x.unsqueeze_(2)
+        x = x.swapaxes(0,1) 
         x = x.float() #weights of convolution layers are in  floats
 
         # print(x.shape)
-        out,state = self.model(x) 
+        out = self.model(x) 
+        print(out.shape)
 
         # print("Applying conv1")
         # x = self.conv1(x)
@@ -118,7 +122,7 @@ class SNN(pl.LightningModule):
 
         #Compute Negative log likelihood loss and accuracy
         logits = self(x)
-        loss = nn.functional.nll_loss(logits,target = y)
+        loss = self.loss(logits,y)
         acc = accuracy(logits,y)
         return {"loss":loss,"acc":acc} 
 
@@ -126,7 +130,7 @@ class SNN(pl.LightningModule):
         x,y = batch
         logits = self(x)
 
-        loss = nn.functional.nll_loss(logits,target = y)
+        loss = self.loss(logits,y)
 
         self.val_confusion_matix(logits,y)
         acc = accuracy(logits,y)
@@ -137,7 +141,7 @@ class SNN(pl.LightningModule):
         x,y = batch
         logits = self(x)
 
-        loss = nn.functional.nll_loss(logits,target = y)
+        loss = self.loss(logits,y)
 
         self.test_confusion_matix(logits,y)
         acc = accuracy(logits,y)
@@ -183,6 +187,7 @@ def main():
     params = LIFParameters(alpha=3,v_th=0.3,v_leak=0.7,method="heavy")
     snn = SNN(seq_length=32,num_classes = 11,lif_params=params,fmax=1000)
 
+
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='epoch')
 
     trainer = pl.Trainer(callbacks=[lr_monitor],gpus=gpus,max_epochs=20,fast_dev_run=True,gradient_clip_val=5)
@@ -194,7 +199,7 @@ def main():
 
     trainer.fit(snn,dm)
 
-    # trainer.test(snn,dm)
+    trainer.test(snn,dm)
 
     
 
