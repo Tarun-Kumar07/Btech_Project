@@ -12,7 +12,7 @@ from norse.torch.module import Lift, LConv2d
 from norse.torch import SequentialState, PoissonEncoder, LIF, LIFParameters
 
 from data_modules import DVSGestureDataModule
-
+# docker run --runtime=nvidia -it -v /home/raj/Btech_Project:/workspace/Btech_project -e NVIDIA_VISIBLE_DEVICES=0,1,2,3 --shm-size=32G --name snn 1b65886be5f5
 import pandas as pd 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -30,7 +30,7 @@ class SNN(pl.LightningModule):
         self.test_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
         # self.val_accuracy = Accuracy(num_classes=num_classes)
         # self.test_accuracy = Accuracy(num_classes=num_classes)
-        self.loss = nn.CrossEntropyLoss()
+        self.loss = nn.MSELoss()
         self.conv1 = LConv2d(1,4,5,2,2)
         self.conv2 = LConv2d(4,8,5,2,2)
         self.conv3 = LConv2d(8,8,3,2,1)
@@ -64,8 +64,8 @@ class SNN(pl.LightningModule):
         x = x.float() #weights of convolution layers are in  floats
 
         # print(x.shape)
-        out = self.model(x) 
-        print(out.shape)
+        out,state = self.model(x) 
+        # print(out.shape)
 
         # print("Applying conv1")
         # x = self.conv1(x)
@@ -122,7 +122,8 @@ class SNN(pl.LightningModule):
 
         #Compute Negative log likelihood loss and accuracy
         logits = self(x)
-        loss = self.loss(logits,y)
+        y_one_hot = nn.functional.one_hot(y,num_classes=11)
+        loss = self.loss(logits,y_one_hot)
         acc = accuracy(logits,y)
         return {"loss":loss,"acc":acc} 
 
@@ -181,7 +182,7 @@ class SNN(pl.LightningModule):
 
 def main():
     gpus = torch.cuda.device_count()
-    cpus = os.cpu_count()
+    cpus = os.cpu_count() // 2
     dm = DVSGestureDataModule(num_workers=cpus,batch_size=16)
 
     params = LIFParameters(alpha=3,v_th=0.3,v_leak=0.7,method="heavy")
@@ -190,7 +191,7 @@ def main():
 
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='epoch')
 
-    trainer = pl.Trainer(callbacks=[lr_monitor],gpus=gpus,max_epochs=20,fast_dev_run=True,gradient_clip_val=5)
+    trainer = pl.Trainer(callbacks=[lr_monitor],gpus=gpus,max_epochs=100,fast_dev_run=False,gradient_clip_val=5)
 
     # rand_input = torch.rand((16,1,128,128))
     # y,_ = snn(rand_input)
