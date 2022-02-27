@@ -11,7 +11,7 @@ from torchvision.datasets import ImageFolder
 
 class DVSGestureDataModule(pl.LightningDataModule):
 
-    def __init__(self,data_dir="../dvs128",batch_size=16,num_workers=4,val_ratio=0.1):
+    def __init__(self,data_dir="../dvs128",batch_size=16,n_time_bins=150,num_workers=4,val_ratio=0.1):
         super().__init__()
         self.data_dir = data_dir
         self.batch_size = batch_size
@@ -20,7 +20,7 @@ class DVSGestureDataModule(pl.LightningDataModule):
         self.persistent = True
         sensor_size = DVSGesture.sensor_size
         self.transforms = Compose([
-            ToVoxelGrid(sensor_size=sensor_size,n_time_bins=150)
+            ToVoxelGrid(sensor_size=sensor_size,n_time_bins=n_time_bins)
             ])
 
     def setup(self,stage=None):

@@ -6,16 +6,96 @@ import torch.nn as nn
 import pytorch_lightning as pl
 import numpy as np
 
+
 from torchmetrics.functional import accuracy
-from torchmetrics import ConfusionMatrix 
+from torchmetrics import ConfusionMatrix , Accuracy
 from norse.torch.module import Lift, LConv2d
 from norse.torch import SequentialState, PoissonEncoder, LIF, LIFParameters
+import snntorch as snn
+import snntorch.functional as SF
+from snntorch import surrogate
+from snntorch import utils
 
 from data_modules import DVSGestureDataModule
 # docker run --runtime=nvidia -it -v /home/raj/Btech_Project:/workspace/Btech_project -e NVIDIA_VISIBLE_DEVICES=0,1,2,3 --shm-size=32G --name snn 1b65886be5f5
 import pandas as pd 
 import seaborn as sns
 import matplotlib.pyplot as plt
+
+
+class SnnTorch():
+    def __init__(self,num_classes,seq_length) -> None:
+        super().__init__()
+        self.seq_length = seq_length
+        conv1 = nn.Conv2d(1,4,5,2,2)
+        conv2 = nn.Conv2d(4,8,5,2,2)
+        conv3 = nn.Conv2d(8,8,3,2,1)
+        conv4 = nn.Conv2d(8,16,3,2,1)
+        dropout = nn.Dropout2d()
+        linear = nn.Linear(1024,num_classes)   
+        lif_params = {"beta":0.7,"threshold":0.3,"spike_grad":surrogate.fast_sigmoid(75),"init_hidden":True}
+        self.model = nn.Sequential(
+                              conv1, #48
+                              snn.Leaky(**lif_params),
+                              conv2, #21
+                              snn.Leaky(**lif_params),
+                              conv3, #6
+                              snn.Leaky(**lif_params),
+                              conv4, #6
+                              snn.Leaky(**lif_params),
+                              dropout,
+                              nn.Flatten(), #32*3*3 
+                              linear,
+                              snn.Leaky(**lif_params,output=True),
+                            )
+    def get_model(self):
+        return self.model
+
+    def forward(self,x):
+        utils.reset(self.model)
+        spk_rec = []
+        for i in range(self.seq_length):
+            spk_out,mem_out = self.model(x[i])
+            spk_rec.append(spk_out)
+
+        return torch.stack(spk_rec)
+
+class Norse():
+    def __init__(self,num_classes) -> None:
+        super().__init__()
+        conv1 = LConv2d(1,4,5,2,2)
+        conv2 = LConv2d(4,8,5,2,2)
+        conv3 = LConv2d(8,8,3,2,1)
+        conv4 = LConv2d(8,16,3,2,1)
+        dropout = nn.Dropout2d()
+        linear = nn.Linear(1024,num_classes)
+
+        params = LIFParameters(alpha=3,v_th=0.3,v_leak=0.7)
+        self.model = SequentialState(
+                                  # PoissonEncoder(seq_length,self.fmax), 
+                                  conv1, #48
+                                  LIF(params),
+                                  conv2, #21
+                                  LIF(params),
+                                  conv3, #6
+                                  LIF(params),
+                                  conv4, #6
+                                  LIF(params),
+                                  dropout,
+                                  Lift(nn.Flatten()), #32*3*3 
+                                  Lift(linear),
+                                  LIF(params),
+                                )
+
+
+    def get_model(self):
+        return self.model
+
+    def forward(self,x):
+        spikes , out = self.model(x)
+        # print((spikes)) 
+        return spikes
+
 
 class SNN(pl.LightningModule):
 
@@ -30,29 +110,12 @@ class SNN(pl.LightningModule):
         self.test_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
         # self.val_accuracy = Accuracy(num_classes=num_classes)
         # self.test_accuracy = Accuracy(num_classes=num_classes)
-        self.loss = nn.MSELoss()
-        self.conv1 = LConv2d(1,4,5,2,2)
-        self.conv2 = LConv2d(4,8,5,2,2)
-        self.conv3 = LConv2d(8,8,3,2,1)
-        self.conv4 = LConv2d(8,16,3,2,1)
-        self.dropout = nn.Dropout2d()
-        self.linear = nn.Linear(1024,self.num_classes)
-        
-        self.model = SequentialState(
-                                  # PoissonEncoder(self.seq_length,self.fmax), 
-                                  self.conv1, #48
-                                  LIF(self.lif_params),
-                                  self.conv2, #21
-                                  LIF(self.lif_params),
-                                  self.conv3, #6
-                                  LIF(self.lif_params),
-                                  self.conv4, #6
-                                  LIF(self.lif_params),
-                                  self.dropout,
-                                  Lift(nn.Flatten()), #32*3*3 
-                                  Lift(self.linear),
-                                  LIF(self.lif_params),
-                                  )
+        # self.loss = nn.MSELoss()
+        self.accuracy = SF.accuracy_rate
+        self.loss = SF.ce_rate_loss() 
+        # self.lib = Norse(num_classes=num_classes)
+        self.lib = SnnTorch(num_classes=num_classes,seq_length=seq_length)
+
 
     def forward(self,x):
         
@@ -63,57 +126,15 @@ class SNN(pl.LightningModule):
         x = x.swapaxes(0,1) 
         x = x.float() #weights of convolution layers are in  floats
 
-        # print(x.shape)
-        out,state = self.model(x) 
-        # print(out.shape)
-
-        # print("Applying conv1")
-        # x = self.conv1(x)
-        # print(x.shape)
-        # print("Applying conv2")
-        # x = self.conv2(x)
-        # print(x.shape)
-        # print("Applying conv3")
-        # x = self.conv3(x)
-        # print(x.shape)
-        # print("Applying conv4")
-        # x = self.conv4(x)
-        # print(x.shape)
-        # print("Applying Dropout")
-        # x = self.dropout(x)
-        # print(x.shape)
-        # print("After flatten")
-        # x = Lift(nn.Flatten())(x)
-        # print(x.shape)
-        # print("After Linear")
-        # x = Lift(self.linear)(x)
-        # print(x.shape)
-
-        #Compute spiking rate by summing across the time dimension (first dimension)
-        spikes = torch.sum(out,0)
-
-        #Convert to logits and apply cross entropy loss
-        logits = nn.functional.softmax(spikes,dim=1)
-
-        return logits
+        return self.lib.forward(x) 
 
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=5e-3, weight_decay=1e-5)
+        optimizer = torch.optim.Adam(self.lib.get_model().parameters(), lr=5e-3, weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer,step_size=2,gamma=0.7)
 
         return {"optimizer":optimizer,"lr_scheduler":scheduler}
 
-    #def _step(self,batch):
-    #    # Return the loss
-    #    x,y = batch
-    #    # x shape => (batch_size,1,100,100)
-
-    #    #Compute Negative log likelihood loss and accuracy
-    #    logits = self(x)
-    #    loss = nn.functional.nll_loss(logits,target = y)
-
-    #    return loss 
 
     def training_step(self,batch,batch_idx):
         # Return the loss
@@ -121,33 +142,30 @@ class SNN(pl.LightningModule):
         # x shape => (batch_size,1,100,100)
 
         #Compute Negative log likelihood loss and accuracy
-        logits = self(x)
-        y_one_hot = nn.functional.one_hot(y,num_classes=11).float()
-        loss = self.loss(logits,y_one_hot)
-        acc = accuracy(logits,y)
+        spike_rec = self(x)
+        acc = self.accuracy(spike_rec,y)
+        loss = self.loss(spike_rec,y)
         return {"loss":loss,"acc":acc} 
 
     def validation_step(self,batch,batch_idx):
         x,y = batch
-        logits = self(x)
-        self.val_confusion_matix(logits,y)
+        spike_rec = self(x)
+        # self.val_confusion_matix(spike_rec,y)
 
-        y_one_hot = nn.functional.one_hot(y,num_classes=11).float()
-        loss = self.loss(logits,y_one_hot)
+        # y_one_hot = nn.functional.one_hot(y,num_classes=11).float()
+        loss = self.loss(spike_rec,y)
 
-        acc = accuracy(logits,y)
+        acc = self.accuracy(spike_rec,y)
         return {"loss":loss,"acc":acc} 
 
       
     def test_step(self,batch,batch_idx):
         x,y = batch
-        logits = self(x)
-        self.test_confusion_matix(logits,y)
+        spike_rec = self(x)
 
-        y_one_hot = nn.functional.one_hot(y,num_classes=11).float()
-        loss = self.loss(logits,y_one_hot)
+        loss = self.loss(spike_rec,y)
 
-        acc = accuracy(logits,y)
+        acc = self.accuracy(spike_rec,y)
         return {"loss":loss,"acc":acc} 
 
 
@@ -185,10 +203,10 @@ class SNN(pl.LightningModule):
 def main():
     gpus = torch.cuda.device_count()
     cpus = os.cpu_count() // 2
-    dm = DVSGestureDataModule(num_workers=cpus,batch_size=16)
+    num_time_bins = 150
+    dm = DVSGestureDataModule(num_workers=cpus,batch_size=16,n_time_bins=num_time_bins)
 
-    params = LIFParameters(alpha=3,v_th=0.3,v_leak=0.7,method="heavy")
-    snn = SNN(seq_length=32,num_classes = 11,lif_params=params,fmax=1000)
+    snn = SNN(seq_length=num_time_bins,num_classes = 11,lif_params=None,fmax=1000)
 
 
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='epoch')
