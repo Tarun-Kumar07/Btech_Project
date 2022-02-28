@@ -1,10 +1,9 @@
-import torch
-import torch.nn as nn
 from torch.utils.data import random_split, DataLoader
 
 from torchmetrics import ConfusionMatrix
 
 import pytorch_lightning as pl
+from pytorch_lightning.plugins import DDPPlugin
 
 import snntorch as snn
 import snntorch.functional as SF
@@ -176,7 +175,7 @@ def main():
 
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='epoch') 
     
-    trainer = pl.Trainer(callbacks=[lr_monitor],gpus=gpus,max_epochs=2,fast_dev_run=False,gradient_clip_val=5,strategy='ddp')
+    trainer = pl.Trainer(callbacks=[lr_monitor],gpus=gpus,max_epochs=2,fast_dev_run=False,gradient_clip_val=5,strategy=DDPPlugin(find_unused_parameters=False))
 
 
     trainer.fit(snn,dm)
