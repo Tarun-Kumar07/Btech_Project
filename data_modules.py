@@ -20,7 +20,7 @@ class DVSGestureDataModule(pl.LightningDataModule):
         self.persistent = True
         sensor_size = DVSGesture.sensor_size
         self.transforms = Compose([
-            ToVoxelGrid(sensor_size=sensor_size,n_time_bins=n_time_bins)
+            ToFrame(sensor_size=sensor_size,n_time_bins=n_time_bins)
             ])
 
     def setup(self,stage=None):
