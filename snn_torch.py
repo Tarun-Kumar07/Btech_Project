@@ -1,3 +1,6 @@
+import matplotlib.pyplot as plt
+import seaborn as sn
+
 import torch
 import torch.nn as nn
 from torch.utils.data import random_split, DataLoader
@@ -117,13 +120,13 @@ class Network(pl.LightningModule):
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_acc", acc, prog_bar=True)
 
-        # cm = self.test_confusion_matix.compute()
-        # df_cm = pd.DataFrame(cm.cpu().numpy(), index = range(self.num_classes), columns=range(self.num_classes))
-        # plt.figure(figsize = (10,7))
-        # fig_ = sns.heatmap(df_cm, annot=True, cmap='Spectral').get_figure()
+        cm = self.test_confusion_matix.compute()
+        df_cm = pd.DataFrame(cm.cpu().numpy(), index = range(self.num_classes), columns=range(self.num_classes))
+        plt.figure(figsize = (10,7))
+        fig_ = sns.heatmap(df_cm, annot=True, cmap='Spectral').get_figure()
 
-        # self.logger.experiment.add_figure("Confusion matrix", fig_, self.current_epoch)
-        # plt.close(fig_)
+        self.logger.experiment.add_figure("Confusion matrix", fig_, self.current_epoch)
+        plt.close(fig_)
 
     def test_epoch_end(self,step_outputs):
         loss, acc = self._epoch_end(step_outputs)
@@ -176,7 +179,7 @@ def main():
 
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='epoch') 
     
-    trainer = pl.Trainer(callbacks=[lr_monitor],gpus=gpus,max_epochs=2,fast_dev_run=False,gradient_clip_val=5,strategy=DDPPlugin(find_unused_parameters=False))
+    trainer = pl.Trainer(callbacks=[lr_monitor],gpus=gpus,max_epochs=256,fast_dev_run=False,gradient_clip_val=5,strategy=DDPPlugin(find_unused_parameters=False))
 
 
     trainer.fit(snn,dm)
