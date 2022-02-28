@@ -1,3 +1,5 @@
+import torch
+import torch.nn as nn
 from torch.utils.data import random_split, DataLoader
 
 from torchmetrics import ConfusionMatrix
@@ -9,7 +11,6 @@ import snntorch as snn
 import snntorch.functional as SF
 from snntorch import surrogate    
 from snntorch import utils
-from snntorch.spikevision import spikedata
 
 from data_modules import DVSGestureDataModule
 
