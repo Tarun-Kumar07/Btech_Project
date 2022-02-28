@@ -47,7 +47,7 @@ class Network(pl.LightningModule):
         self.accuracy = SF.accuracy_rate
         self.loss = SF.ce_rate_loss()
         self.val_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
-        self.test_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
+        elf.test_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
 
     def forward(self,x):
         # x.unsqueeze_(2)
@@ -176,7 +176,7 @@ def main():
 
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='epoch') 
     
-    trainer = pl.Trainer(callbacks=[lr_monitor],gpus=gpus,max_epochs=2,fast_dev_run=False,gradient_clip_val=5)
+    trainer = pl.Trainer(callbacks=[lr_monitor],gpus=gpus,max_epochs=2,fast_dev_run=False,gradient_clip_val=5,strategy='ddp')
 
 
     trainer.fit(snn,dm)
