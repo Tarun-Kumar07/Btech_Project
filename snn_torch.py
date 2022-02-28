@@ -64,8 +64,8 @@ class Network(pl.LightningModule):
     
     
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=5e-3, weight_decay=1e-5)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=10,eta_min=1e-6)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=2e-3)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=32)
 
         return {"optimizer":optimizer,"lr_scheduler":scheduler}
 
