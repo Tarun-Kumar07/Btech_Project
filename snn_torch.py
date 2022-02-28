@@ -47,7 +47,7 @@ class Network(pl.LightningModule):
         self.accuracy = SF.accuracy_rate
         self.loss = SF.ce_rate_loss()
         self.val_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
-        elf.test_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
+        self.test_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
 
     def forward(self,x):
         # x.unsqueeze_(2)
