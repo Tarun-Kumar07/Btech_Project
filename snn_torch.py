@@ -1,5 +1,6 @@
+import pandas as pd
+import seaborn as sns
 import matplotlib.pyplot as plt
-import seaborn as sn
 
 import torch
 import torch.nn as nn
@@ -29,6 +30,7 @@ class Network(pl.LightningModule):
         self.linear = nn.Linear(1024,num_classes)   
         self.backpass = surrogate.fast_sigmoid(75)
         self.lif_params = {"beta":0.7,"threshold":0.3,"spike_grad":self.backpass,"init_hidden":True}
+        self.num_classes = num_classes
 
         self.model = nn.Sequential(
                               self.conv1, 
@@ -70,7 +72,8 @@ class Network(pl.LightningModule):
         optimizer = torch.optim.Adam(self.model.parameters(), lr=2e-3)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=32)
 
-        return {"optimizer":optimizer,"lr_scheduler":scheduler}
+        # return {"optimizer":optimizer,"lr_scheduler":scheduler}
+        return optimizer
 
 
     def training_step(self,batch,batch_idx):
