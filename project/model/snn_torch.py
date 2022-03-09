@@ -61,7 +61,9 @@ class Network(pl.LightningModule):
 
         utils.reset(self.model)
         spk_rec = []
-        for i in range(self.time_steps):
+        time_steps = x.shape[0]
+
+        for i in range(time_steps):
             spk_out,mem_out = self.model(x[i])
             spk_rec.append(spk_out)
 
@@ -136,38 +138,6 @@ class Network(pl.LightningModule):
         self.log("test_loss", loss, prog_bar=True)
         self.log("test_acc", acc, prog_bar=True)
 
-
-# class Dataset(pl.LightningDataModule):
-#     def __init__(self,data_dir,num_steps,batch_size,num_workers=4,val_ratio=0.1) -> None:
-#         super().__init__()
-#         self.data_dir = data_dir
-#         self.num_steps = num_steps 
-#         self.val_ratio = val_ratio
-#         self.num_workers = num_workers
-#         self.batch_size = batch_size
-
-#     def setup(self, stage) -> None:
-
-#         if stage == "fit" or stage is None:
-#             dataset = spikedata.DVSGesture(root=self.data_dir,train=True,num_steps=self.num_steps)
-            
-#             total = len(dataset)
-#             val_size = int(total * self.val_ratio)
-#             train_size = total - val_size
-
-#             self.train_ds , self.val_ds = random_split(dataset,[train_size,val_size])
-
-#         if stage == "test" or stage is None:
-#             self.test_ds = spikedata.DVSGesture(root=self.data_dir,train=False,num_steps=self.num_steps)
-
-#     def train_dataloader(self) :
-#         return DataLoader(self.train_ds,num_workers=self.num_workers,batch_size=self.batch_size,pin_memory=True)
-
-#     def val_dataloader(self):
-#         return DataLoader(self.val_ds,num_workers=self.num_workers,batch_size=self.batch_size,pin_memory=True)
-
-#     def test_dataloader(self) :
-#         return DataLoader(self.test_ds,num_workers=self.num_workers,batch_size=self.batch_size,pin_memory=True)
 
 def main():
     root_path = "../dvs128"

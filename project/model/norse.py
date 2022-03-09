@@ -17,7 +17,6 @@ from snntorch import surrogate
 from snntorch import utils
 
 from data_modules import DVSGestureDataModule
-# docker run --runtime=nvidia -it -v /home/raj/Btech_Project:/workspace/Btech_project -e NVIDIA_VISIBLE_DEVICES=0,1,2,3 --shm-size=32G --name snn 1b65886be5f5
 import pandas as pd 
 import seaborn as sns
 import matplotlib.pyplot as plt
