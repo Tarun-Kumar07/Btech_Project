@@ -1,50 +1,21 @@
 import torch
-import torch.nn as nn
 
 import pytorch_lightning as pl
 
-import snntorch as snn
+from snntorch import utils
 import snntorch.functional as SF
-from snntorch import surrogate, utils
 
-# import pandas as pd
-# import seaborn as sns
-# import matplotlib.pyplot as plt
+from tonic.datasets import DVSGesture
+from tonic.transforms import Compose,ToFrame, ToVoxelGrid
+from torch.utils.data import random_split, DataLoader
 
-def get_model(num_classes):
-    conv1 = nn.Conv2d(2,4,5,2,2)
-    conv2 = nn.Conv2d(4,8,5,2,2)
-    conv3 = nn.Conv2d(8,8,3,2,1)
-    conv4 = nn.Conv2d(8,16,3,2,1)
-    dropout = nn.Dropout2d()
-    linear = nn.Linear(1024,num_classes)   
-    backpass = surrogate.fast_sigmoid(75)
-    lif_params = {"beta":0.7,"threshold":0.3,"spike_grad":backpass,"init_hidden":True}
-
-    model = nn.Sequential(
-                          conv1, 
-                          snn.Leaky(**lif_params),
-                          conv2,
-                          snn.Leaky(**lif_params),
-                          conv3,
-                          snn.Leaky(**lif_params),
-                          conv4,
-                          snn.Leaky(**lif_params),
-                          dropout,
-                          nn.Flatten(),
-                          linear,
-                          snn.Leaky(**lif_params,output=True),
-                        )
-
-    return model
 
 class Classifier(pl.LightningModule):
 
-    def __init__(self,model:torch.nn.Module,optimizer:torch.optim.Optimizer,scheduler=None) -> None:
+    def __init__(self,backbone:torch.nn.Module,learning_rate=1e-3) -> None:
         super(Classifier,self).__init__()
-        self.model = model 
-        self.optimizer = optimizer
-        self.scheduler = scheduler 
+        self.save_hyperparameters()
+        self.backbone = backbone 
 
         #Metrics
         self.accuracy = SF.accuracy_rate
@@ -52,29 +23,23 @@ class Classifier(pl.LightningModule):
         # self.val_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
         # self.test_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
 
-        self.save_hyperparameters()
-
-
     def forward(self,x):
         # x.unsqueeze_(2)
         x = x.swapaxes(0,1) 
         x = x.float() #weights of convolution layers are in  floats
 
-        utils.reset(self.model)
+        utils.reset(self.backbone)
         spk_rec = []
         time_steps = x.shape[0]
 
         for i in range(time_steps):
-            spk_out,mem_out = self.model(x[i])
+            spk_out,mem_out = self.backbone(x[i])
             spk_rec.append(spk_out)
 
         return torch.stack(spk_rec)
 
     def configure_optimizers(self):
-        if self.scheduler is None:
-            return self.optimizer
-        else:
-            return {'optimizer':self.optimizer,'lr_scheduler':self.scheduler}
+        return torch.optim.Adam(self.parameters(),lr=self.hparams.learning_rate)
 
     def training_step(self,batch,batch_idx):
         x,y = batch
@@ -110,6 +75,10 @@ class Classifier(pl.LightningModule):
 
 
     def training_epoch_end(self,step_outputs):
+        if self.current_epoch == 0:
+            sample_input = torch.rand(-1,2,128,128)
+            self.logger.experiment.add_graph(self.backbone,sample_input)
+
         loss, acc = self._epoch_end(step_outputs)
         self.log("train_loss", loss, prog_bar=True)
         self.log("train_acc", acc, prog_bar=True)
@@ -132,4 +101,40 @@ class Classifier(pl.LightningModule):
         self.log("test_loss", loss, prog_bar=True)
         self.log("test_acc", acc, prog_bar=True)
 
+
+class DVSGestureDataModule(pl.LightningDataModule):
+
+    def __init__(self,data_dir,batch_size=16,n_time_bins=150,num_workers=4,val_ratio=0.1):
+        super().__init__()
+        self.data_dir = data_dir
+        self.batch_size = batch_size
+        self.num_worker = num_workers
+        self.val_ratio = val_ratio
+        self.persistent = True
+        sensor_size = DVSGesture.sensor_size
+        self.transforms = Compose([
+            ToFrame(sensor_size=sensor_size,n_time_bins=n_time_bins)
+            ])
+
+    def setup(self,stage=None):
+        if stage == "fit" or stage is None:
+          dataset = DVSGesture(save_to = self.data_dir, train=True,transform=self.transforms) 
+
+          size = len(dataset)
+          train_size = int((1-self.val_ratio)*size)
+          val_size = size - train_size
+
+          self.train_ds , self.val_ds = random_split(dataset,[train_size,val_size])
+        
+        if stage == "test" or stage is None:
+          self.test_ds = DVSGesture(save_to = self.data_dir, train=False,transform=self.transforms) 
+
+    def train_dataloader(self):
+        return DataLoader(self.train_ds,batch_size = self.batch_size, num_workers= self.num_worker, persistent_workers=self.persistent)
+
+    def val_dataloader(self):
+        return DataLoader(self.val_ds,batch_size = self.batch_size,num_workers= self.num_worker, persistent_workers=self.persistent)
+
+    def test_dataloader(self):
+        return DataLoader(self.test_ds,batch_size = self.batch_size,num_workers= self.num_worker, persistent_workers=self.persistent)
 

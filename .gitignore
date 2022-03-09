@@ -1,7 +1,6 @@
 *.pyc
 venv/*
-lightning_logs/*
-TrafficSignsLogs/*
-cache/*
-data/*
-dvs128_logs/*
+project/cache/*
+project/data/*
+project/logs/*
+project/toDelete/
