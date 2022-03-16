@@ -14,13 +14,12 @@ from utils import Classifier, DVSGestureDataModule
 # import matplotlib.pyplot as plt
 
 def get_model(num_classes):
-    conv1 = nn.Conv2d(2,16,5,2)
-    conv2 = nn.Conv2d(16,32,5,2)
-    conv3 = nn.Conv2d(32,64,3,2)
-    conv4 = nn.Conv2d(64,128,3,2)
-    dropout = nn.Dropout2d()
-    linear1 = nn.Linear(64*128,512)   
-    linear2 = nn.Linear(512,num_classes)   
+    conv1 = nn.Conv2d(2,4,5,2,2)
+    conv2 = nn.Conv2d(4,8,5,2,2)
+    conv3 = nn.Conv2d(8,8,3,2,1)
+    conv4 = nn.Conv2d(8,16,3,2,1)
+    dropout = nn.Dropout2d()   
+    linear = nn.Linear(1024,num_classes)   
     backpass = surrogate.fast_sigmoid(75)
     lif_params = {"beta":0.7,"threshold":0.3,"spike_grad":backpass,"init_hidden":True}
 
@@ -35,9 +34,7 @@ def get_model(num_classes):
                           snn.Leaky(**lif_params),
                           dropout,
                           nn.Flatten(),
-                          linear1,
-                          snn.Leaky(**lif_params),
-                          linear2,
+                          linear,
                           snn.Leaky(**lif_params,output=True),
                         )
 
