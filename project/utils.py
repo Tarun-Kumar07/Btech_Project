@@ -1,14 +1,20 @@
 import torch
 
+import numpy as np
+
 import pytorch_lightning as pl
 
+import snntorch as snn
 from snntorch import utils
 import snntorch.functional as SF
+from snntorch import surrogate
 
 from tonic.datasets import DVSGesture
 from tonic.transforms import Compose,ToFrame, ToVoxelGrid
 from torch.utils.data import random_split, DataLoader
 
+from qtorch import FixedPoint
+from qtorch.auto_low import sequential_lower
 
 class Classifier(pl.LightningModule):
 
@@ -23,17 +29,33 @@ class Classifier(pl.LightningModule):
         # self.val_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
         # self.test_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
 
+    def reset(self):
+        '''
+            Iterates over the model, resets and deattaches leaky layers
+            Sort of utils.reset in recursive fashion
+            
+        '''
+        def _reset(module):
+            if isinstance(module,snn.Leaky):
+                snn.Leaky.reset_hidden()
+                snn.Leaky.detach_hidden()
+            else : 
+                for m in module.children():
+                    _reset(m)
+
+        _reset(self.backbone)
+
+
     def forward(self,x):
         # x.unsqueeze_(2)
         x = x.swapaxes(0,1) 
-        x = x.float() #weights of convolution layers are in  floats
 
-        utils.reset(self.backbone)
+        self.reset()
         spk_rec = []
         time_steps = x.shape[0]
 
         for i in range(time_steps):
-            spk_out,mem_out = self.backbone(x[i])
+            spk_out = self.backbone(x[i])
             spk_rec.append(spk_out)
 
         return torch.stack(spk_rec)
@@ -75,9 +97,9 @@ class Classifier(pl.LightningModule):
 
 
     def training_epoch_end(self,step_outputs):
-        if self.current_epoch == 0:
-            sample_input = torch.rand(-1,2,128,128)
-            self.logger.experiment.add_graph(self.backbone,sample_input)
+        # if self.current_epoch == 0:
+        #     sample_input = torch.rand(1,2,128,128)
+        #     self.logger.experiment.add_graph(self.backbone,sample_input)
 
         loss, acc = self._epoch_end(step_outputs)
         self.log("train_loss", loss, prog_bar=True)
@@ -101,6 +123,9 @@ class Classifier(pl.LightningModule):
         self.log("test_loss", loss, prog_bar=True)
         self.log("test_acc", acc, prog_bar=True)
 
+class ToFloat(object):
+    def __call__(self,x):
+        return x.astype(np.float32)
 
 class DVSGestureDataModule(pl.LightningDataModule):
 
@@ -113,7 +138,8 @@ class DVSGestureDataModule(pl.LightningDataModule):
         self.persistent = True
         sensor_size = DVSGesture.sensor_size
         self.transforms = Compose([
-            ToFrame(sensor_size=sensor_size,n_time_bins=n_time_bins)
+            ToFrame(sensor_size=sensor_size,n_time_bins=n_time_bins),
+            ToFloat()
             ])
 
     def setup(self,stage=None):
@@ -137,4 +163,20 @@ class DVSGestureDataModule(pl.LightningDataModule):
 
     def test_dataloader(self):
         return DataLoader(self.test_ds,batch_size = self.batch_size,num_workers= self.num_worker, persistent_workers=self.persistent)
+
+def quantize(backbone:torch.nn.Module):
+    word_length = 35
+    frac_length = 32
+    fxp = FixedPoint(wl=word_length,fl=frac_length)
+
+    fxp_backbone = sequential_lower(backbone,layer_types=["conv","linear","dropout"],forward_number=fxp,backward_number=fxp)
+    layers = []
+    
+    for l in fxp_backbone.children():
+        if isinstance(l,snn.Leaky):
+            layers.append(snn.Leaky(**LIF_PARAMS))
+        else:
+            layers.append(l)
+    
+    return torch.nn.Sequential(*layers) 
 
