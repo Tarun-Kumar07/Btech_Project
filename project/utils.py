@@ -97,10 +97,10 @@ class Classifier(pl.LightningModule):
 
 
     def training_epoch_end(self,step_outputs):
-        # if self.current_epoch == 0:
+        if self.current_epoch == 0:
         #     sample_input = torch.rand(1,2,128,128)
         #     self.logger.experiment.add_graph(self.backbone,sample_input)
-
+            self.logger.log_hyperparams(self.backbone.log_params)
         loss, acc = self._epoch_end(step_outputs)
         self.log("train_loss", loss, prog_bar=True)
         self.log("train_acc", acc, prog_bar=True)

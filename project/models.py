@@ -68,6 +68,7 @@ class CustomSNN(nn.Module):
         # self._modules = deepcopy(model._modules)
         self.model = model
 
+        self.log_params = {"conv_config":conv_config,"linear_config":linear_config,"in_channels":in_channels,"depth":depth,width:width,"lif_params":lif_params}
 
     def _create_conv_blocks(self,conv_params) -> nn.Module:
         kernel,out_channels,stride,repeat = conv_params
@@ -160,7 +161,7 @@ def test():
     lif_params = {"beta":0.7,"threshold":0.3,"spike_grad":surrogate.fast_sigmoid(75),"init_hidden":True}
 
     model = CustomSNN(conv_baseline,linear_baseline,2,1.0,1.0,lif_params)
-    logger = TensorBoardLogger("./logs",name="test_class")
+    logger = TensorBoardLogger("./logs",name="test_2",log_graph=True)
     # model_fxp = quantize(model)
     clf = Classifier(model)
     dm = DVSGestureDataModule("./data") 
@@ -208,6 +209,6 @@ def cli_main():
     
 
 if __name__ == "__main__":
-    cli_main()
-    # test()
+    # cli_main()
+    test()
 
