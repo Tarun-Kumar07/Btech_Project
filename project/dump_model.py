@@ -1,37 +1,38 @@
+from models import get_model
 from utils import Classifier,DVSGestureDataModule
 import os
 from fxpmath import Fxp
 
-FXP_REF = Fxp(None,signed=True,n_int=2,n_frac=32)
+FXP_REF = Fxp(None,signed=True,n_int=2,n_frac=7)
 
 def write_conv_layer(filters,file):
     n_kernel,n_depth,n_x,n_y = filters.shape
-    # file.write(f"reg [35:0] filter [{n_kernel*n_depth-1}:0][{n_x-1}:0][{n_y-1}:0];\n")
+    # file.write(f"reg [10:0] filter [{n_kernel*n_depth-1}:0][{n_x-1}:0][{n_y-1}:0];\n")
     for k in range(n_kernel):
         for d in range(n_depth):  
             for x in range(n_x):
                 for y in range(n_y):
                     fxp = Fxp(filters[k][d][x][y].numpy(),like=FXP_REF)
                     binary = fxp.bin()
-                    file.write(f"filter5[{n_depth*k+d}][{x}][{y}] = 35'b{binary};\n")
+                    file.write(f"filter5[{n_depth*k+d}][{x}][{y}] = 10'b{binary};\n")
 
 def write_linear_layer(weights,file):
     n_rows,n_cols = weights.shape
-    # file.write(f"reg [35:0] filter [{n_rows-1}:0][{n_cols-1}:0];\n")
+    # file.write(f"reg [10:0] filter [{n_rows-1}:0][{n_cols-1}:0];\n")
     for r in range(n_rows):
         for c in range(n_cols):  
             fxp = Fxp(weights[r][c].numpy(),like=FXP_REF)
             binary = fxp.bin()
-            file.write(f"filter[{r}][{c}] = 35'b{binary};\n")
+            file.write(f"filter[{r}][{c}] = 10'b{binary};\n")
 
 def write_bias(bias,file):
     n_bias = bias.shape[0]
 
-    # file.write(f"reg [35:0] bias [{n_bias - 1}:0];\n")
+    # file.write(f"reg [10:0] bias [{n_bias - 1}:0];\n")
     for b in range(n_bias):
         fxp = Fxp(bias[b].numpy(),like=FXP_REF)
         binary = fxp.bin()
-        file.write(f"bias5[{b}] = 35'b{binary};\n")
+        file.write(f"bias5[{b}] = 10'b{binary};\n")
 
 def dump_data(path="./data",out="./data_out"):
     dm = DVSGestureDataModule(path)
@@ -60,14 +61,13 @@ def dump_data(path="./data",out="./data_out"):
                             file.write(f"{binary}\n")
                 file.write("\n")
 
-        break
 
         count += 1
 
     
 
 
-def dump_model(model,path="./logs/custom_model/version_4/checkpoints/epoch=399-step=6399.ckpt",out="./out"):
+def dump_model(model=get_model(11),path="./logs/custom_model/version_4/checkpoints/epoch=399-step=6399.ckpt",out="./out"):
 
     os.makedirs(out,exist_ok=True)
     model = Classifier.load_from_checkpoint(checkpoint_path=path,backbone=model)
@@ -98,12 +98,12 @@ def dump_model(model,path="./logs/custom_model/version_4/checkpoints/epoch=399-s
 
 
 def test():
-    fxp_ref = Fxp(None,signed=True,n_int=2,n_frac=32)
+    fxp_ref = Fxp(None,signed=True,n_int=2,n_frac=7)
     beta = Fxp(0.7,like=fxp_ref).bin()
     thresh = Fxp(0.3,like=fxp_ref).bin()
     print(f"{beta = } {thresh = }")
 
+
 if __name__ == "__main__":
-    # dump_model(None)
-    dump_data()
-    # test()
+    test()
+    # dump_model()

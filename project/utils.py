@@ -21,7 +21,7 @@ class Classifier(pl.LightningModule):
     def __init__(self,backbone:torch.nn.Module,learning_rate=1e-3) -> None:
         super(Classifier,self).__init__()
         self.save_hyperparameters()
-        self.backbone = backbone 
+        self.backbone = backbone
 
         #Metrics
         self.accuracy = SF.accuracy_rate
@@ -97,9 +97,9 @@ class Classifier(pl.LightningModule):
 
 
     def training_epoch_end(self,step_outputs):
-        # if self.current_epoch == 0:
-        #     sample_input = torch.rand(1,2,128,128)
-        #     self.logger.experiment.add_graph(self.backbone,sample_input)
+        if self.current_epoch == 0:
+            sample_input = torch.rand(16,150,2,128,128)
+            self.logger.experiment.add_graph(sample_input)
 
         loss, acc = self._epoch_end(step_outputs)
         self.log("train_loss", loss, prog_bar=True)
@@ -174,7 +174,7 @@ def quantize(backbone:torch.nn.Module):
     
     for l in fxp_backbone.children():
         if isinstance(l,snn.Leaky):
-            layers.append(snn.Leaky(**LIF_PARAMS))
+            layers.append(snn.Leaky(**backbone.lif_params))
         else:
             layers.append(l)
     

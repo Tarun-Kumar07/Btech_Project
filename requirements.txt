@@ -1,3 +1,4 @@
+numpy == 1.21.6
 pytorch-lightning == 1.5.10
 torch == 1.10.2
 torchvision == 0.11.3
@@ -9,3 +10,5 @@ pandas == 1.4.1
 seaborn == 0.11.2
 matplotlib == 3.5.1
 notebook == 6.4.8
+fxpmath == 0.4.7
+qtorch == 0.3.0
