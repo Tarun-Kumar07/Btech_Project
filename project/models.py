@@ -1,12 +1,15 @@
-from copy import deepcopy
 import torch
 import torch.nn as nn
 
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.plugins import DDPPlugin
 
 import snntorch as snn
-from snntorch import surrogate, utils
+from snntorch import surrogate 
+
+import optuna
+from optuna.integration import PyTorchLightningPruningCallback
 
 from utils import Classifier, DVSGestureDataModule, quantize
 
@@ -102,6 +105,7 @@ class CustomSNN(nn.Module):
         # self._modules = deepcopy(model._modules)
         self.model = model
 
+        self.log_params = {"conv_config":conv_config,"linear_config":linear_config,"in_channels":in_channels,"depth":depth,width:width,"lif_params":lif_params}
 
     def _create_conv_blocks(self,conv_params) -> nn.Module:
         kernel,out_channels,stride,repeat = conv_params
@@ -145,52 +149,79 @@ def cal_linear_features(in_features,conv_config):
         out_ = int((in_-kernel)/stride) + 1
         in_ = out_
         channels = out_channel
+        print(out_)
        
     return out_* out_* channels
 
-def test():
-    conv_baseline = [ 
-                #kernel, out_channels , stride, repeat 
-                [5, 4 , 2 , 1],
-                [5, 8 , 2 , 2],
-                [3, 8 , 2 , 2],
-                [3, 16 , 2 , 1],
-            ]
+# def get_model(num_classes):
+#     conv1 = nn.Conv2d(2,4,5,2,2)
+#     conv2 = nn.Conv2d(4,8,5,2,2)
+#     conv3 = nn.Conv2d(8,8,3,2,1)
+#     conv4 = nn.Conv2d(8,16,3,2,1)
+#     dropout = nn.Dropout2d()   
+#     linear = nn.Linear(1024,num_classes)   
 
-    linear_features = cal_linear_features(128,conv_baseline)
-    
-    linear_baseline = [
-                #in_features, out_features
-                [linear_features, 11],
-            ]
+#     lif_params = {"beta":0.7,"threshold":0.3,"spike_grad":surrogate.fast_sigmoid(75),"init_hidden":True}
 
-    lif_params = {"beta":0.7,"threshold":0.3,"spike_grad":surrogate.fast_sigmoid(75)}
+#     model = nn.Sequential(
+#                           conv1, 
+#                           snn.Leaky(**lif_params),
+#                           conv2,
+#                           snn.Leaky(**lif_params),
+#                           conv3,
+#                           snn.Leaky(**lif_params),
+#                           conv4,
+#                           snn.Leaky(**lif_params),
+#                           dropout,
+#                           nn.Flatten(),
+#                           linear,
+#                           snn.Leaky(**lif_params),
+#                         )
 
-    params = {
-            "conv_config": conv_baseline,
-            "linear_config": linear_baseline,
-            "in_channels":2,
-            "depth":1.0,
-            "width":1.0,
-            "lif_params":lif_params
-        }
+#     return model
 
-    
-    model = CustomSNN(**params)
-    clf = Classifier(model)
-    # print(model)
-    # logger = TensorBoardLogger("./logs","test_graph",log_graph=True)
-    x = torch.rand(16,150,2,128,128)
-    y = clf(x)
-    # logger.log_graph(clf,input_array = x)
-    # logger = TensorBoardLogger("./logs",name="test_class_1",log_graph=True)
-    # # model_fxp = quantize(model)
-    # clf = Classifier(model)
-    # dm = DVSGestureDataModule("./data") 
-    # trainer = pl.Trainer(logger = logger,max_epochs=2,fast_dev_run=True)
-    # trainer.fit(clf,dm)
-    # trainer.test(clf,dm)
+def get_objective(conv_config,linear_config,gpus) :
 
+    def objective(trial:optuna.trial.Trial) -> float:
+        backpass = [
+                    surrogate.sigmoid(),
+                    surrogate.fast_sigmoid(),
+                    surrogate.triangular(),
+                    surrogate.spike_rate_escape(),
+                    surrogate.LSO(),
+                    surrogate.SSO()
+                ]
+
+        lif_params = {
+                "beta" : trial.suggest_float("beta",0,1),
+                "threshold" : trial.suggest_float("threshold",0,1),
+                "spike_grad" : trial.suggest_categorical("surrogate_grad",choices=backpass),
+                "init_hidden" : True
+                }
+
+        learning_rate = trial.suggest_float("learning_rate",1e-4,1e-2,log=True)
+
+        model = CustomSNN(conv_config,linear_config,2,1.0,1.0,lif_params)
+        logger = TensorBoardLogger("./logs",name="custom_model_hp",log_graph=True)
+
+        clf = Classifier(model,learning_rate=learning_rate)
+        dm = DVSGestureDataModule("./data") 
+        trainer = pl.Trainer(logger = logger,
+                             max_epochs=1,
+                             gpus = gpus,
+                             fast_dev_run=False,
+                             callbacks=[PyTorchLightningPruningCallback(trial, monitor="val_acc")],
+                             strategy = DDPPlugin(find_unused_parameters=False)
+                            )
+        trainer.fit(clf,dm)
+        trainer.test(clf,dm)
+
+        hparams = {"conv_config":conv_baseline,"linear_config":linear_baseline,"lif_params":lif_params}
+        logger.log_hyperparams(hparams)
+
+        return trainer.callback_metrics["val_acc"].item()
+
+    return objective
 
 def test_dm():
     dm = DVSGestureDataModule("./data") 
@@ -202,33 +233,61 @@ def test_dm():
         print(x[0][0])
         break
     
+def objective_test(trial):
+    x = trial.suggest_float('x', -10, 10)
+    y = trial.suggest_float('y', -10, 10)
 
+    return (x - 2) ** 2 - y**2 + offset
 
 def cli_main():
-    # model = Classifier(get_model(11))
-    dm = DVSGestureDataModule("./data") 
+    conv_config = [ #kernel ,out_channels, stride, repeat 
+                    [3,16,4,1],
+                    [3,32,4,1]
+                  ]
 
-    # logger = TensorBoardLogger("./logs",name="custom_model")
-    # trainer = pl.Trainer(logger=logger,max_epochs=1,fast_dev_run=False)
-    # trainer.fit(model,dm)
+    linear_features = cal_linear_features(128,conv_config)
 
-    # PATH = "./logs/custom_model/version_4/checkpoints/epoch=399-step=6399.ckpt"
-    # model = Classifier.load_from_checkpoint(checkpoint_path=PATH,backbone=get_model(11))
+    linear_config = [ #in_features, out_features
+                      [linear_features,11]
+            ]
 
-    # dm = DVSGestureDataModule("./data") 
 
-    # trainer = pl.Trainer(max_epochs=1,fast_dev_run=False)
-    # trainer.test(model,dm)
+    gpus = torch.cuda.device_count()
 
-    # print("Testing quantized")
-    # model_fxp = quantize(model.backbone)
-    # clf = Classifier(model_fxp)
-    # trainer.test(clf,dm)
-
-    # classfier = Classifier.load_from_checkpoint("./logs/test_class/version_0/checkpoints/epoch=1-step=121.ckpt")
-
-    # trainer.test(classfier,dm)
+    objective = get_objective(conv_config,linear_config,gpus)
     
+    pruner = optuna.pruners.SuccessiveHalvingPruner()
+    study = optuna.create_study(direction="maximize",pruner=pruner)
+    study.optimize(objective, n_trials=2)
+
+    best_params = study.best_params
+
+    with open("./logs/custom_model/hparm.txt","a+") as f:
+        f.writable(best_params)
+
+    
+    #After tunining
+    lif_params = {
+                  "beta":best_params["beta"],
+                  "threshold":best_params["threshold"],
+                  "spike_grad":best_params["spike_grad"],
+                  "init_hidden":True
+                  }
+
+    model = CustomSNN(conv_config,linear_config,2,1.0,1.0,lif_params)
+    dm = DVSGestureDataModule("./data")
+    logger = TensorBoardLogger("./logs",name="custom_model",log_graph=True)
+    clf = Classifier(model,best_params["learning_rate"])
+    lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="epoch")
+    trainer = pl.Trainer(logger=logger,
+                         gpus=gpus,
+                         max_epochs=1,
+                         callbacks=[lr_monitor],
+                         strategy = DDPPlugin(find_unused_parameters=False),
+                         )
+
+    trainer.fit(clf,dm)
+    trainer.test(clf,dm)
 
 if __name__ == "__main__":
     # cli_main()

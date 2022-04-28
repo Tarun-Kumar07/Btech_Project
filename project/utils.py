@@ -5,20 +5,24 @@ import numpy as np
 import pytorch_lightning as pl
 
 import snntorch as snn
-from snntorch import utils
+# from snntorch import utils
 import snntorch.functional as SF
-from snntorch import surrogate
 
 from tonic.datasets import DVSGesture
-from tonic.transforms import Compose,ToFrame, ToVoxelGrid
+from tonic.transforms import Compose,ToFrame
 from torch.utils.data import random_split, DataLoader
+# from torchmetrics import ConfusionMatrix
 
 from qtorch import FixedPoint
 from qtorch.auto_low import sequential_lower
 
+import matplotlib.pyplot as plt
+
+
+
 class Classifier(pl.LightningModule):
 
-    def __init__(self,backbone:torch.nn.Module,learning_rate=1e-3) -> None:
+    def __init__(self,backbone:torch.nn.Module,num_classes=11,learning_rate=1e-3) -> None:
         super(Classifier,self).__init__()
         self.save_hyperparameters()
         self.backbone = backbone
@@ -28,6 +32,8 @@ class Classifier(pl.LightningModule):
         self.loss = SF.ce_rate_loss()
         # self.val_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
         # self.test_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
+
+        self.example_input_array = torch.rand((16,150,2,128,128))
 
     def reset(self):
         '''
@@ -61,7 +67,10 @@ class Classifier(pl.LightningModule):
         return torch.stack(spk_rec)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(),lr=self.hparams.learning_rate)
+        optimizer = torch.optim.Adam(self.backbone.parameters(), lr=5e-3, weight_decay=1e-5)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=10,eta_min=1e-6)
+
+        return {"optimizer":optimizer,"lr_scheduler":scheduler}
 
     def training_step(self,batch,batch_idx):
         x,y = batch
@@ -97,10 +106,9 @@ class Classifier(pl.LightningModule):
 
 
     def training_epoch_end(self,step_outputs):
-        if self.current_epoch == 0:
-            sample_input = torch.rand(16,150,2,128,128)
-            self.logger.experiment.add_graph(sample_input)
-
+        # if self.current_epoch == 0:
+        #     sample_input = torch.rand(1,2,128,128)
+        #     self.logger.experiment.add_graph(self.backbone,sample_input)
         loss, acc = self._epoch_end(step_outputs)
         self.log("train_loss", loss, prog_bar=True)
         self.log("train_acc", acc, prog_bar=True)
@@ -123,9 +131,14 @@ class Classifier(pl.LightningModule):
         self.log("test_loss", loss, prog_bar=True)
         self.log("test_acc", acc, prog_bar=True)
 
+
+
+
 class ToFloat(object):
     def __call__(self,x):
         return x.astype(np.float32)
+
+
 
 class DVSGestureDataModule(pl.LightningDataModule):
 
@@ -163,6 +176,8 @@ class DVSGestureDataModule(pl.LightningDataModule):
 
     def test_dataloader(self):
         return DataLoader(self.test_ds,batch_size = self.batch_size,num_workers= self.num_worker, persistent_workers=self.persistent)
+
+
 
 def quantize(backbone:torch.nn.Module):
     word_length = 35
