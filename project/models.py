@@ -185,14 +185,14 @@ def get_objective(conv_config,linear_config,gpus) :
 
         slope = trial.suggest_int("slope",20,100)
         lif_params = {
-                "beta" : trial.suggest_float("beta",0,1),
-                "threshold" : trial.suggest_float("threshold",0,1),
+                "beta" : trial.suggest_float("beta",0.5,1),
+                "threshold" : trial.suggest_float("threshold",0.3,3),
                 "spike_grad" : surrogate.fast_sigmoid(slope) ,
                 "init_hidden" : True
                 }
 
         learning_rate = trial.suggest_float("learning_rate",1e-4,1e-2,log=True)
-        dropout_rate = trial.suggest_float("dropout_rate",0,1)
+        dropout_rate = trial.suggest_float("dropout_rate",0,0.5)
 
         model = CustomSNN(conv_config,linear_config,2,dropout_rate,1.0,1.0,lif_params)
         logger = TensorBoardLogger("./logs",name="custom_model_hp",log_graph=True)
@@ -200,14 +200,14 @@ def get_objective(conv_config,linear_config,gpus) :
         clf = Classifier(model,learning_rate=learning_rate)
         dm = DVSGestureDataModule("./data") 
         trainer = pl.Trainer(logger = logger,
-                             max_epochs=1,
+                             max_epochs=50,
                              gpus = gpus,
                              fast_dev_run=False,
                              callbacks=[PyTorchLightningPruningCallback(trial, monitor="val_acc")],
                              strategy = DDPPlugin(find_unused_parameters=False)
                             )
         trainer.fit(clf,dm)
-        trainer.test(clf,dm)
+        # trainer.test(clf,dm)
 
         hparams = {"conv_config":conv_config,"linear_config":linear_config,"lif_params":lif_params}
         logger.log_hyperparams(hparams)
@@ -248,27 +248,25 @@ def cli_main():
             ]
 
 
-    gpus = torch.cuda.device_count()
+    gpus = 3 # torch.cuda.device_count()
 
     objective = get_objective(conv_config,linear_config,gpus)
 
     pruner = optuna.pruners.SuccessiveHalvingPruner()
     study = optuna.create_study(direction="maximize",pruner=pruner)
-    study.optimize(objective, n_trials=2)
+    study.optimize(objective, n_trials=20)
 
     best_params = study.best_params
 
     with open("./logs/custom_model_hp/hparm.txt","a+") as f:
-        f.write(best_params)
+        f.write(str(best_params))
 
     logger = TensorBoardLogger("./logs",name="custom_model",log_graph=True)
     optuna_visulaizers = [plot_parallel_coordinate, plot_param_importances, plot_intermediate_values, plot_optimization_history]
 
     for v in optuna_visulaizers:
-        html_page = v(study).write_html(full_html=True)
-        filename = v.__name__+".html"
-        with open(filename,"w") as f:
-            f.write(html_page)
+        filename = "./logs/custom_model_hp/" +  v.__name__+".html"
+        v(study).write_html(full_html=True,file=filename)
 
     
     # best_params = {
@@ -295,7 +293,7 @@ def cli_main():
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="epoch")
     trainer = pl.Trainer(logger=logger,
                          gpus=gpus,
-                         max_epochs=1,
+                         max_epochs=200,
                          callbacks=[lr_monitor],
                          strategy = DDPPlugin(find_unused_parameters=False),
                          )

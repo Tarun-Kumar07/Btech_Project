@@ -67,7 +67,7 @@ class Classifier(pl.LightningModule):
         return torch.stack(spk_rec)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.backbone.parameters(), lr=5e-3, weight_decay=1e-5)
+        optimizer = torch.optim.Adam(self.backbone.parameters(), lr = self.hparams.learning_rate, weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=10,eta_min=1e-6)
 
         return {"optimizer":optimizer,"lr_scheduler":scheduler}
@@ -106,9 +106,6 @@ class Classifier(pl.LightningModule):
 
 
     def training_epoch_end(self,step_outputs):
-        # if self.current_epoch == 0:
-        #     sample_input = torch.rand(1,2,128,128)
-        #     self.logger.experiment.add_graph(self.backbone,sample_input)
         loss, acc = self._epoch_end(step_outputs)
         self.log("train_loss", loss, prog_bar=True)
         self.log("train_acc", acc, prog_bar=True)
