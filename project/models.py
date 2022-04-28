@@ -209,7 +209,7 @@ def get_objective(conv_config,linear_config,gpus) :
                              gpus = gpus,
                              fast_dev_run=False,
                              callbacks=[PyTorchLightningPruningCallback(trial, monitor="val_acc")],
-                             # strategy = DDPPlugin(find_unused_parameters=False)
+                             strategy = DDPPlugin(find_unused_parameters=False)
                             )
         trainer.fit(clf,dm)
         trainer.test(clf,dm)
