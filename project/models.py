@@ -197,7 +197,7 @@ def get_objective(conv_config,linear_config,gpus) :
                 }
 
         learning_rate = trial.suggest_float("learning_rate",1e-4,1e-2,log=True)
-        dropout_rate = trial.suggest_float("dropout_rate")
+        dropout_rate = trial.suggest_float("dropout_rate",0,1)
 
         model = CustomSNN(conv_config,linear_config,2,dropout_rate,1.0,1.0,lif_params)
         logger = TensorBoardLogger("./logs",name="custom_model_hp",log_graph=True)
