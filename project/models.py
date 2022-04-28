@@ -10,6 +10,8 @@ from snntorch import surrogate
 
 import optuna
 from optuna.integration import PyTorchLightningPruningCallback
+from optuna.visualization import plot_parallel_coordinate, plot_param_importances, plot_intermediate_values, plot_optimization_history
+# from optuna.intergration.tensorboard import TensorBoardCallaback
 
 from utils import Classifier, DVSGestureDataModule#, quantize
 
@@ -180,19 +182,12 @@ def cal_linear_features(in_features,conv_config):
 def get_objective(conv_config,linear_config,gpus) :
 
     def objective(trial:optuna.trial.Trial) -> float:
-        backpass = [
-                    surrogate.sigmoid(),
-                    surrogate.fast_sigmoid(),
-                    surrogate.triangular(),
-                    surrogate.spike_rate_escape(),
-                    surrogate.LSO(),
-                    surrogate.SSO()
-                ]
 
+        slope = trial.suggest_int("slope",20,100)
         lif_params = {
                 "beta" : trial.suggest_float("beta",0,1),
                 "threshold" : trial.suggest_float("threshold",0,1),
-                "spike_grad" : trial.suggest_categorical("surrogate_grad",choices=backpass),
+                "spike_grad" : surrogate.fast_sigmoid(slope) ,
                 "init_hidden" : True
                 }
 
@@ -246,7 +241,7 @@ def cli_main():
                   ]
 
     linear_features = cal_linear_features(128,conv_config)
-    print(linear_features)
+    # print(linear_features)
 
     linear_config = [ #in_features, out_features
                       [linear_features,11]
@@ -256,15 +251,24 @@ def cli_main():
     gpus = torch.cuda.device_count()
 
     objective = get_objective(conv_config,linear_config,gpus)
-    
+
     pruner = optuna.pruners.SuccessiveHalvingPruner()
     study = optuna.create_study(direction="maximize",pruner=pruner)
     study.optimize(objective, n_trials=2)
 
     best_params = study.best_params
 
-    with open("./logs/custom_model/hparm.txt","a+") as f:
+    with open("./logs/custom_model_hp/hparm.txt","a+") as f:
         f.write(best_params)
+
+    logger = TensorBoardLogger("./logs",name="custom_model",log_graph=True)
+    optuna_visulaizers = [plot_parallel_coordinate, plot_param_importances, plot_intermediate_values, plot_optimization_history]
+
+    for v in optuna_visulaizers:
+        html_page = v(study).write_html(full_html=True)
+        filename = v.__name__+".html"
+        with open(filename,"w") as f:
+            f.write(html_page)
 
     
     # best_params = {
@@ -280,14 +284,13 @@ def cli_main():
     lif_params = {
                   "beta":best_params["beta"],
                   "threshold":best_params["threshold"],
-                  "spike_grad":best_params["spike_grad"],
+                  "spike_grad":surrogate.fast_sigmoid(best_params["slope"]),
                   "init_hidden":True
                   }
 
 
     model = CustomSNN(conv_config,linear_config,2,best_params["dropout_rate"],1.0,1.0,lif_params)
     dm = DVSGestureDataModule("./data")
-    logger = TensorBoardLogger("./logs",name="custom_model",log_graph=True)
     clf = Classifier(model,best_params["learning_rate"])
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="epoch")
     trainer = pl.Trainer(logger=logger,
