@@ -13,8 +13,8 @@ from tonic.transforms import Compose,ToFrame
 from torch.utils.data import random_split, DataLoader
 # from torchmetrics import ConfusionMatrix
 
-from qtorch import FixedPoint
-from qtorch.auto_low import sequential_lower
+# from qtorch import FixedPoint
+# from qtorch.auto_low import sequential_lower
 
 import matplotlib.pyplot as plt
 
@@ -179,19 +179,19 @@ class DVSGestureDataModule(pl.LightningDataModule):
 
 
 
-def quantize(backbone:torch.nn.Module):
-    word_length = 35
-    frac_length = 32
-    fxp = FixedPoint(wl=word_length,fl=frac_length)
+# def quantize(backbone:torch.nn.Module):
+#     word_length = 35
+#     frac_length = 32
+#     fxp = FixedPoint(wl=word_length,fl=frac_length)
 
-    fxp_backbone = sequential_lower(backbone,layer_types=["conv","linear","dropout"],forward_number=fxp,backward_number=fxp)
-    layers = []
+#     fxp_backbone = sequential_lower(backbone,layer_types=["conv","linear","dropout"],forward_number=fxp,backward_number=fxp)
+#     layers = []
     
-    for l in fxp_backbone.children():
-        if isinstance(l,snn.Leaky):
-            layers.append(snn.Leaky(**backbone.lif_params))
-        else:
-            layers.append(l)
+#     for l in fxp_backbone.children():
+#         if isinstance(l,snn.Leaky):
+#             layers.append(snn.Leaky(**backbone.lif_params))
+#         else:
+#             layers.append(l)
     
-    return torch.nn.Sequential(*layers) 
+#     return torch.nn.Sequential(*layers) 
 

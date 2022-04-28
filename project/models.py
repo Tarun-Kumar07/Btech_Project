@@ -11,7 +11,7 @@ from snntorch import surrogate
 import optuna
 from optuna.integration import PyTorchLightningPruningCallback
 
-from utils import Classifier, DVSGestureDataModule, quantize
+from utils import Classifier, DVSGestureDataModule#, quantize
 
 # import pandas as pd
 # import seaborn as sns
