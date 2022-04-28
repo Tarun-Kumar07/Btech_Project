@@ -59,12 +59,6 @@ class SCNN(nn.Module):
         self.model = nn.Sequential(conv,leaky)
     
     def forward(self,x):
-        # print(x)
-        # x = self.conv(x)
-        # # print(x)
-        # spk = self.leaky(x)
-        # print("==================")
-
         return self.model(x)
 
 def test_scnn():
@@ -90,13 +84,14 @@ class SLINEAR(nn.Module):
 
 
 class CustomSNN(nn.Module):
-    def __init__(self,conv_config:list,linear_config:list,in_channels:int,depth:float,width:float,lif_params:dict):
+    def __init__(self,conv_config:list,linear_config:list,in_channels:int,dropout_rate:float,depth:float,width:float,lif_params:dict):
         super(CustomSNN,self).__init__()
         self._in_channels = in_channels
         self.depth_factor = depth 
         self.width_factor = width
 
         self.lif_params  = lif_params 
+        self.dropout_rate = dropout_rate
 
         conv_layers = self._create_conv(conv_config)
         linear_layers  = self._create_linear(linear_config)
@@ -104,6 +99,7 @@ class CustomSNN(nn.Module):
         model = nn.Sequential(*conv_layers,nn.Flatten(),*linear_layers)
         # self._modules = deepcopy(model._modules)
         self.model = model
+
 
         self.log_params = {"conv_config":conv_config,"linear_config":linear_config,"in_channels":in_channels,"depth":depth,width:width,"lif_params":lif_params}
 
@@ -120,6 +116,8 @@ class CustomSNN(nn.Module):
 
         for _ in range(repeat - 1):
             layers.append(SCNN(self.lif_params,out_channels,out_channels,kernel))
+
+        layers.append(nn.Dropout(self.dropout_rate))
        
         return nn.Sequential(* layers)
     
@@ -149,7 +147,6 @@ def cal_linear_features(in_features,conv_config):
         out_ = int((in_-kernel)/stride) + 1
         in_ = out_
         channels = out_channel
-        print(out_)
        
     return out_* out_* channels
 
@@ -200,8 +197,9 @@ def get_objective(conv_config,linear_config,gpus) :
                 }
 
         learning_rate = trial.suggest_float("learning_rate",1e-4,1e-2,log=True)
+        dropout_rate = trial.suggest_float("dropout_rate")
 
-        model = CustomSNN(conv_config,linear_config,2,1.0,1.0,lif_params)
+        model = CustomSNN(conv_config,linear_config,2,dropout_rate,1.0,1.0,lif_params)
         logger = TensorBoardLogger("./logs",name="custom_model_hp",log_graph=True)
 
         clf = Classifier(model,learning_rate=learning_rate)
@@ -211,41 +209,44 @@ def get_objective(conv_config,linear_config,gpus) :
                              gpus = gpus,
                              fast_dev_run=False,
                              callbacks=[PyTorchLightningPruningCallback(trial, monitor="val_acc")],
-                             strategy = DDPPlugin(find_unused_parameters=False)
+                             # strategy = DDPPlugin(find_unused_parameters=False)
                             )
         trainer.fit(clf,dm)
         trainer.test(clf,dm)
 
-        hparams = {"conv_config":conv_baseline,"linear_config":linear_baseline,"lif_params":lif_params}
+        hparams = {"conv_config":conv_config,"linear_config":linear_config,"lif_params":lif_params}
         logger.log_hyperparams(hparams)
 
         return trainer.callback_metrics["val_acc"].item()
 
     return objective
 
-def test_dm():
-    dm = DVSGestureDataModule("./data") 
-    dm.setup()
+# def test_dm():
+#     dm = DVSGestureDataModule("./data") 
+#     dm.setup()
 
-    train_dl = dm.train_dataloader()
+#     train_dl = dm.train_dataloader()
 
-    for x,y in train_dl:
-        print(x[0][0])
-        break
+#     for x,y in train_dl:
+#         print(x[0][0])
+#         break
     
-def objective_test(trial):
-    x = trial.suggest_float('x', -10, 10)
-    y = trial.suggest_float('y', -10, 10)
+# def objective_test(trial):
+#     x = trial.suggest_float('x', -10, 10)
+#     y = trial.suggest_float('y', -10, 10)
 
-    return (x - 2) ** 2 - y**2 + offset
+#     return (x - 2) ** 2 - y**2 
 
 def cli_main():
     conv_config = [ #kernel ,out_channels, stride, repeat 
-                    [3,16,4,1],
-                    [3,32,4,1]
+                    [7,8,2,2],
+                    [5,16,2,2],
+                    [3,32,2,2],
+                    [3,64,2,2],
                   ]
 
     linear_features = cal_linear_features(128,conv_config)
+    print(linear_features)
 
     linear_config = [ #in_features, out_features
                       [linear_features,11]
@@ -263,10 +264,19 @@ def cli_main():
     best_params = study.best_params
 
     with open("./logs/custom_model/hparm.txt","a+") as f:
-        f.writable(best_params)
+        f.write(best_params)
 
     
-    #After tunining
+    # best_params = {
+    #         "beta" : 0.7,
+    #         "threshold" : 0.3,
+    #         "spike_grad" : surrogate.fast_sigmoid(),
+    #         "learning_rate" : 1e-3,
+    #         "dropout_rate" : 0.8
+
+    #         }
+
+    ##After tunining
     lif_params = {
                   "beta":best_params["beta"],
                   "threshold":best_params["threshold"],
@@ -274,7 +284,8 @@ def cli_main():
                   "init_hidden":True
                   }
 
-    model = CustomSNN(conv_config,linear_config,2,1.0,1.0,lif_params)
+
+    model = CustomSNN(conv_config,linear_config,2,best_params["dropout_rate"],1.0,1.0,lif_params)
     dm = DVSGestureDataModule("./data")
     logger = TensorBoardLogger("./logs",name="custom_model",log_graph=True)
     clf = Classifier(model,best_params["learning_rate"])
@@ -290,6 +301,6 @@ def cli_main():
     trainer.test(clf,dm)
 
 if __name__ == "__main__":
-    # cli_main()
-    test()
+    cli_main()
+    # test()
 
