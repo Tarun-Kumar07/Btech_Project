@@ -47,12 +47,12 @@ def dump_data(path="./data",out="./data_out"):
     os.makedirs(out,exist_ok=True)
 
     count = 0
-    for i in range(labels.shape[0]):
+    for i in range(1):
         filepath = os.path.join(out, "data_" + str(count))
 
         with open(filepath,"a") as file:
 
-            for t in range(data.shape[1]):
+            for t in range(1):
                 for c in range(data.shape[2]):
                     for x in range(data.shape[3]):
                         for y in range(data.shape[4]):
@@ -105,5 +105,6 @@ def test():
 
 
 if __name__ == "__main__":
-    test()
+    # test()
+    dump_data()
     # dump_model()

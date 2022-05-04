@@ -17,6 +17,7 @@ from torch.utils.data import random_split, DataLoader
 # from qtorch.auto_low import sequential_lower
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 
@@ -34,6 +35,7 @@ class Classifier(pl.LightningModule):
         # self.test_confusion_matix = ConfusionMatrix(num_classes=num_classes,normalize='true')
 
         self.example_input_array = torch.rand((16,150,2,128,128))
+        self.num_classes = num_classes
 
     def reset(self):
         '''
@@ -67,7 +69,7 @@ class Classifier(pl.LightningModule):
         return torch.stack(spk_rec)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.backbone.parameters(), lr = self.hparams.learning_rate, weight_decay=1e-5)
+        optimizer = torch.optim.Adam(self.backbone.parameters(), lr = self.hparams.learning_rate, weight_decay=0)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=10,eta_min=1e-6)
 
         return {"optimizer":optimizer,"lr_scheduler":scheduler}
@@ -115,13 +117,24 @@ class Classifier(pl.LightningModule):
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_acc", acc, prog_bar=True)
 
-        # cm = self.test_confusion_matix.compute()
+        # cm = self.test_confusion_matix.update()
         # df_cm = pd.DataFrame(cm.cpu().numpy(), index = range(self.num_classes), columns=range(self.num_classes))
         # plt.figure(figsize = (10,7))
         # fig_ = sns.heatmap(df_cm, annot=True, cmap='Spectral').get_figure()
 
         # self.logger.experiment.add_figure("Confusion matrix", fig_, self.current_epoch)
         # plt.close(fig_)
+
+        preds = torch.cat([tmp['preds'] for tmp in outputs])
+        targets = torch.cat([tmp['target'] for tmp in outputs])
+        confusion_matrix = pl.metrics.functional.confusion_matrix(preds, targets, num_classes=10)
+
+        df_cm = pd.DataFrame(confusion_matrix.numpy(), index = range(10), columns=range(10))
+        plt.figure(figsize = (10,7))
+        fig_ = sns.heatmap(df_cm, annot=True, cmap='Spectral').get_figure()
+        plt.close(fig_)
+        
+        self.logger.experiment.add_figure("Confusion matrix", fig_, self.current_epoch)
 
     def test_epoch_end(self,step_outputs):
         loss, acc = self._epoch_end(step_outputs)

@@ -152,47 +152,20 @@ def cal_linear_features(in_features,conv_config):
        
     return out_* out_* channels
 
-# def get_model(num_classes):
-#     conv1 = nn.Conv2d(2,4,5,2,2)
-#     conv2 = nn.Conv2d(4,8,5,2,2)
-#     conv3 = nn.Conv2d(8,8,3,2,1)
-#     conv4 = nn.Conv2d(8,16,3,2,1)
-#     dropout = nn.Dropout2d()   
-#     linear = nn.Linear(1024,num_classes)   
-
-#     lif_params = {"beta":0.7,"threshold":0.3,"spike_grad":surrogate.fast_sigmoid(75),"init_hidden":True}
-
-#     model = nn.Sequential(
-#                           conv1, 
-#                           snn.Leaky(**lif_params),
-#                           conv2,
-#                           snn.Leaky(**lif_params),
-#                           conv3,
-#                           snn.Leaky(**lif_params),
-#                           conv4,
-#                           snn.Leaky(**lif_params),
-#                           dropout,
-#                           nn.Flatten(),
-#                           linear,
-#                           snn.Leaky(**lif_params),
-#                         )
-
-#     return model
-
 def get_objective(conv_config,linear_config,gpus) :
 
     def objective(trial:optuna.trial.Trial) -> float:
 
         slope = trial.suggest_int("slope",20,100)
         lif_params = {
-                "beta" : trial.suggest_float("beta",0.5,1),
-                "threshold" : trial.suggest_float("threshold",0.3,3),
+                "beta" : 0.7,# trial.suggest_float("beta",0.5,1),
+                "threshold" : 0.3 ,# trial.suggest_float("threshold",0.3,3),
                 "spike_grad" : surrogate.fast_sigmoid(slope) ,
                 "init_hidden" : True
                 }
 
-        learning_rate = trial.suggest_float("learning_rate",1e-4,1e-2,log=True)
-        dropout_rate = trial.suggest_float("dropout_rate",0,0.5)
+        learning_rate = 1e-3 # trial.suggest_float("learning_rate",1e-4,1e-2,log=True)
+        dropout_rate = 0.1 #trial.suggest_float("dropout_rate",0,0.5)
 
         model = CustomSNN(conv_config,linear_config,2,dropout_rate,1.0,1.0,lif_params)
         logger = TensorBoardLogger("./logs",name="custom_model_hp",log_graph=True)
@@ -200,7 +173,7 @@ def get_objective(conv_config,linear_config,gpus) :
         clf = Classifier(model,learning_rate=learning_rate)
         dm = DVSGestureDataModule("./data") 
         trainer = pl.Trainer(logger = logger,
-                             max_epochs=50,
+                             max_epochs=100,
                              gpus = gpus,
                              fast_dev_run=False,
                              callbacks=[PyTorchLightningPruningCallback(trial, monitor="val_acc")],
@@ -233,22 +206,30 @@ def get_objective(conv_config,linear_config,gpus) :
 #     return (x - 2) ** 2 - y**2 
 
 def cli_main():
+    # conv_config = [ #kernel ,out_channels, stride, repeat 
+    #                 [7,8,2,2],
+    #                 [5,16,2,2],
+    #                 [3,32,2,2],
+    #                 [3,64,2,2],
+    #               ]
+
+
     conv_config = [ #kernel ,out_channels, stride, repeat 
-                    [7,8,2,2],
+                    [5,8,2,2],
                     [5,16,2,2],
                     [3,32,2,2],
                     [3,64,2,2],
                   ]
 
     linear_features = cal_linear_features(128,conv_config)
-    # print(linear_features)
+    print(linear_features)
 
     linear_config = [ #in_features, out_features
                       [linear_features,11]
             ]
 
 
-    gpus = 3 # torch.cuda.device_count()
+    gpus = torch.cuda.device_count()
 
     objective = get_objective(conv_config,linear_config,gpus)
 
@@ -290,11 +271,11 @@ def cli_main():
     model = CustomSNN(conv_config,linear_config,2,best_params["dropout_rate"],1.0,1.0,lif_params)
     dm = DVSGestureDataModule("./data")
     clf = Classifier(model,best_params["learning_rate"])
-    lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="epoch")
+    # lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="epoch")
     trainer = pl.Trainer(logger=logger,
                          gpus=gpus,
-                         max_epochs=200,
-                         callbacks=[lr_monitor],
+                         max_epochs=400,
+                         # callbacks=[lr_monitor],
                          strategy = DDPPlugin(find_unused_parameters=False),
                          )
 
