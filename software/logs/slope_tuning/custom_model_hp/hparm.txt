@@ -1,0 +1,1 @@
+{'slope': 27}{'slope': 36}{'slope': 83}{'slope': 92}
