@@ -1,6 +1,5 @@
 *.pyc
-venv/*
-project/cache/*
-project/data/*
-project/logs/*
-toDelete/*
+software/venv/*
+software/cache/*
+software/data/*
+software/logs/*
